@@ -1150,6 +1150,7 @@ public class CoreTracer implements AgentTracer.TracerAPI {
       final DDId spanId = idGenerationStrategy.generate();
       final DDId parentSpanId;
       final Map<String, String> baggage;
+      final Map<String, String> propagatedHeaders;
       final PendingTrace parentTrace;
       final int samplingPriority;
       final int samplingMechanism;
@@ -1182,6 +1183,7 @@ public class CoreTracer implements AgentTracer.TracerAPI {
         traceId = ddsc.getTraceId();
         parentSpanId = ddsc.getSpanId();
         baggage = ddsc.getBaggageItems();
+        propagatedHeaders = ddsc.getPropagatedHeaders();
         parentTrace = ddsc.getTrace();
         samplingPriority = PrioritySampling.UNSET;
         samplingMechanism = SamplingMechanism.UNKNOWN;
@@ -1210,6 +1212,7 @@ public class CoreTracer implements AgentTracer.TracerAPI {
           samplingMechanism = extractedContext.getSamplingMechanism();
           endToEndStartTime = extractedContext.getEndToEndStartTime();
           baggage = extractedContext.getBaggage();
+          propagatedHeaders = extractedContext.getPropagatedHeaders();
         } else {
           // Start a new trace
           traceId = IdGenerationStrategy.RANDOM.generate();
@@ -1218,6 +1221,7 @@ public class CoreTracer implements AgentTracer.TracerAPI {
           samplingMechanism = SamplingMechanism.UNKNOWN;
           endToEndStartTime = 0;
           baggage = null;
+          propagatedHeaders = null;
         }
 
         // Get header tags and set origin whether propagating or not.
@@ -1269,6 +1273,7 @@ public class CoreTracer implements AgentTracer.TracerAPI {
               samplingMechanism,
               origin,
               baggage,
+              propagatedHeaders,
               errorFlag,
               spanType,
               tagsSize,

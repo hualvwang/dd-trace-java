@@ -30,6 +30,7 @@ public abstract class ContextInterpreter implements AgentPropagation.KeyClassifi
   protected int samplingMechanism;
   protected Map<String, String> tags;
   protected Map<String, String> baggage;
+  protected Map<String, String> propagatedHeaders;
   protected String origin;
   protected long endToEndStartTime;
   protected boolean hasForwarded;
@@ -120,6 +121,7 @@ public abstract class ContextInterpreter implements AgentPropagation.KeyClassifi
     forwardedPort = null;
     tags = Collections.emptyMap();
     baggage = Collections.emptyMap();
+    propagatedHeaders = Collections.emptyMap();
     valid = true;
     return this;
   }
@@ -143,7 +145,8 @@ public abstract class ContextInterpreter implements AgentPropagation.KeyClassifi
                   forwardedIp,
                   forwardedPort,
                   baggage,
-                  tags);
+                  tags,
+                  propagatedHeaders);
         } else {
           context =
               new ExtractedContext(
@@ -154,7 +157,8 @@ public abstract class ContextInterpreter implements AgentPropagation.KeyClassifi
                   origin,
                   endToEndStartTime,
                   baggage,
-                  tags);
+                  tags,
+                  propagatedHeaders);
         }
         return context;
       } else if (hasForwarded) {

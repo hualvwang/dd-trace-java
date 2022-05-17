@@ -14,6 +14,7 @@ public class ExtractedContext extends TagContext {
   private final int samplingMechanism;
   private final long endToEndStartTime;
   private final Map<String, String> baggage;
+  private final Map<String, String> propagatedHeaders;
 
   public ExtractedContext(
       final DDId traceId,
@@ -23,7 +24,8 @@ public class ExtractedContext extends TagContext {
       final String origin,
       final long endToEndStartTime,
       final Map<String, String> baggage,
-      final Map<String, String> tags) {
+      final Map<String, String> tags,
+      final Map<String, String> propagatedHeaders) {
     super(origin, tags);
     this.traceId = traceId;
     this.spanId = spanId;
@@ -31,11 +33,17 @@ public class ExtractedContext extends TagContext {
     this.samplingMechanism = samplingMechanism;
     this.endToEndStartTime = endToEndStartTime;
     this.baggage = baggage;
+    this.propagatedHeaders = propagatedHeaders;
   }
 
   @Override
   public final Iterable<Map.Entry<String, String>> baggageItems() {
     return baggage.entrySet();
+  }
+
+  @Override
+  public final Iterable<Map.Entry<String, String>> propagatedHeaders() {
+    return propagatedHeaders.entrySet();
   }
 
   @Override
@@ -62,5 +70,9 @@ public class ExtractedContext extends TagContext {
 
   public final Map<String, String> getBaggage() {
     return baggage;
+  }
+
+  public final Map<String, String> getPropagatedHeaders() {
+    return propagatedHeaders;
   }
 }

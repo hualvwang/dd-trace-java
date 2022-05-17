@@ -208,6 +208,7 @@ import static datadog.trace.api.config.TracerConfig.AGENT_PORT_LEGACY;
 import static datadog.trace.api.config.TracerConfig.AGENT_TIMEOUT;
 import static datadog.trace.api.config.TracerConfig.AGENT_UNIX_DOMAIN_SOCKET;
 import static datadog.trace.api.config.TracerConfig.CLOCK_SYNC_PERIOD;
+import static datadog.trace.api.config.TracerConfig.CUSTOM_PROPAGATION_HEADERS;
 import static datadog.trace.api.config.TracerConfig.ENABLE_TRACE_AGENT_V05;
 import static datadog.trace.api.config.TracerConfig.HEADER_TAGS;
 import static datadog.trace.api.config.TracerConfig.HTTP_CLIENT_ERROR_STATUSES;
@@ -363,6 +364,7 @@ public class Config {
   private final boolean logExtractHeaderNames;
   private final Set<PropagationStyle> propagationStylesToExtract;
   private final Set<PropagationStyle> propagationStylesToInject;
+  private final Set<String> customPropagationHeaders;
   private final int clockSyncPeriod;
 
   private final String dogStatsDNamedPipe;
@@ -761,6 +763,7 @@ public class Config {
     propagationStylesToInject =
         getPropagationStyleSetSettingFromEnvironmentOrDefault(
             PROPAGATION_STYLE_INJECT, DEFAULT_PROPAGATION_STYLE_INJECT);
+    customPropagationHeaders = tryMakeImmutableSet(configProvider.getList(CUSTOM_PROPAGATION_HEADERS));
 
     clockSyncPeriod = configProvider.getInteger(CLOCK_SYNC_PERIOD, DEFAULT_CLOCK_SYNC_PERIOD);
 
@@ -1250,6 +1253,10 @@ public class Config {
 
   public Set<PropagationStyle> getPropagationStylesToInject() {
     return propagationStylesToInject;
+  }
+
+  public Set<String> getCustomPropagationHeaders() {
+    return customPropagationHeaders;
   }
 
   public int getClockSyncPeriod() {

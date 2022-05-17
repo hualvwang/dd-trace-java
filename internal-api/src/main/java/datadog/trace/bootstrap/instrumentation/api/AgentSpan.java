@@ -160,6 +160,8 @@ public interface AgentSpan extends MutableSpan, IGSpanInfo {
 
     Iterable<Map.Entry<String, String>> baggageItems();
 
+    Iterable<Map.Entry<String, String>> propagatedHeaders();
+
     PathwayContext getPathwayContext();
 
     interface Extracted extends Context {

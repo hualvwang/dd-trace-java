@@ -2,11 +2,13 @@ package datadog.trace.core.propagation;
 
 import static datadog.trace.core.propagation.HttpCodec.firstHeaderValue;
 
+import datadog.trace.api.Config;
 import datadog.trace.api.DDId;
 import datadog.trace.api.sampling.PrioritySampling;
 import datadog.trace.bootstrap.instrumentation.api.AgentPropagation;
 import datadog.trace.core.DDSpanContext;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -61,6 +63,10 @@ class B3HttpCodec {
         }
         setter.set(carrier, B3_KEY, injectedB3Id.toString());
 
+        for (final Map.Entry<String, String> entry : context.propagatedHeaders()) {
+          setter.set(carrier, entry.getKey(), HttpCodec.encode(entry.getValue()));
+        }
+
         log.debug("{} - B3 parent context injected - {}", context.getTraceId(), injectedTraceId);
       } catch (final NumberFormatException e) {
         if (log.isDebugEnabled()) {
@@ -93,6 +99,7 @@ class B3HttpCodec {
     private static final int TAGS = 2;
     private static final int SAMPLING_PRIORITY = 3;
     private static final int B3_ID = 4;
+    private static final int CUSTOM_PROPAGATION = 5;
     private static final int IGNORE = -1;
 
     private B3ContextInterpreter(final Map<String, String> taggedHeaders) {
@@ -127,6 +134,8 @@ class B3HttpCodec {
               classification = SAMPLING_PRIORITY;
             } else if (handledXForwarding(key, value)) {
               return true;
+            } else if(isItemInSetIgnoreCase(Config.get().getCustomPropagationHeaders(), key)) {
+              classification = CUSTOM_PROPAGATION;
             }
             break;
           case 'f':
@@ -177,6 +186,14 @@ class B3HttpCodec {
                   }
                   break;
                 }
+              case CUSTOM_PROPAGATION:
+              {
+                if (propagatedHeaders.isEmpty()) {
+                  propagatedHeaders = new TreeMap<>();
+                }
+                propagatedHeaders.put(key, HttpCodec.decode(value));
+              }
+              break;
             }
           }
         } catch (final RuntimeException e) {
@@ -242,5 +259,15 @@ class B3HttpCodec {
           ? PrioritySampling.SAMPLER_KEEP
           : PrioritySampling.SAMPLER_DROP;
     }
+
+    private boolean isItemInSetIgnoreCase(Set<String> set, String item) {
+      for (String s : set) {
+        if (s.equalsIgnoreCase(item)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
   }
 }

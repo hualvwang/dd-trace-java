@@ -12,6 +12,7 @@ import datadog.trace.api.DDTags;
 import datadog.trace.bootstrap.instrumentation.api.AgentPropagation;
 import datadog.trace.core.DDSpanContext;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,6 +57,10 @@ class DatadogHttpCodec {
       for (final Map.Entry<String, String> entry : context.baggageItems()) {
         setter.set(carrier, OT_BAGGAGE_PREFIX + entry.getKey(), HttpCodec.encode(entry.getValue()));
       }
+
+      for (final Map.Entry<String, String> entry : context.propagatedHeaders()) {
+        setter.set(carrier, entry.getKey(), HttpCodec.encode(entry.getValue()));
+      }
     }
   }
 
@@ -79,6 +84,7 @@ class DatadogHttpCodec {
     private static final int TAGS = 4;
     private static final int OT_BAGGAGE = 5;
     private static final int E2E_START = 6;
+    private static final int CUSTOM_PROPAGATION = 7;
     private static final int IGNORE = -1;
 
     private DatadogContextInterpreter(Map<String, String> taggedHeaders) {
@@ -112,6 +118,8 @@ class DatadogHttpCodec {
             return true;
           } else if (handledXForwarding(key, value)) {
             return true;
+          } else if(isItemInSetIgnoreCase(Config.get().getCustomPropagationHeaders(), key)) {
+            classification = CUSTOM_PROPAGATION;
           }
           break;
         case 'f':
@@ -175,6 +183,14 @@ class DatadogHttpCodec {
                       lowerCaseKey.substring(OT_BAGGAGE_PREFIX.length()), HttpCodec.decode(value));
                 }
                 break;
+              case CUSTOM_PROPAGATION:
+                {
+                  if (propagatedHeaders.isEmpty()) {
+                    propagatedHeaders = new TreeMap<>();
+                  }
+                  propagatedHeaders.put(key, HttpCodec.decode(value));
+                }
+                break;
               default:
             }
           }
@@ -194,6 +210,15 @@ class DatadogHttpCodec {
         log.debug("Ignoring invalid end-to-end start time {}", value, e);
         return 0;
       }
+    }
+
+    private boolean isItemInSetIgnoreCase(Set<String> set, String item) {
+      for (String s : set) {
+        if (s.equalsIgnoreCase(item)) {
+          return true;
+        }
+      }
+      return false;
     }
   }
 }

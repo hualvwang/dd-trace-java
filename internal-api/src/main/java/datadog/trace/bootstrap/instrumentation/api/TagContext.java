@@ -61,6 +61,10 @@ public class TagContext implements AgentSpan.Context.Extracted {
     return Collections.emptyList();
   }
 
+  public Iterable<Map.Entry<String, String>> propagatedHeaders() {
+    return Collections.emptyList();
+  }
+
   @Override
   public DDId getTraceId() {
     return DDId.ZERO;

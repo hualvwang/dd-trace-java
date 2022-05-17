@@ -46,12 +46,15 @@ public class DDSpanContext implements AgentSpan.Context, RequestContext<Object>,
       DDCaches.newFixedSizeCache(256);
 
   private static final Map<String, String> EMPTY_BAGGAGE = Collections.emptyMap();
+  private static final Map<String, String> EMPTY_PROPAGATED_HEADER = Collections.emptyMap();
 
   /** The collection of all span related to this one */
   private final PendingTrace trace;
 
   /** Baggage is associated with the whole trace and shared with other spans */
   private volatile Map<String, String> baggageItems;
+
+  private volatile Map<String, String> propagatedHeaders;
 
   // Not Shared with other span contexts
   private final DDId traceId;
@@ -141,6 +144,7 @@ public class DDSpanContext implements AgentSpan.Context, RequestContext<Object>,
       final int samplingMechanism,
       final CharSequence origin,
       final Map<String, String> baggageItems,
+      final Map<String, String> propagatedHeaders,
       final boolean errorFlag,
       final CharSequence spanType,
       final int tagsSize,
@@ -164,6 +168,12 @@ public class DDSpanContext implements AgentSpan.Context, RequestContext<Object>,
       this.baggageItems = EMPTY_BAGGAGE;
     } else {
       this.baggageItems = new ConcurrentHashMap<>(baggageItems);
+    }
+
+    if (propagatedHeaders == null || propagatedHeaders.isEmpty()) {
+      this.propagatedHeaders = EMPTY_PROPAGATED_HEADER;
+    } else {
+      this.propagatedHeaders = new ConcurrentHashMap<>(propagatedHeaders);
     }
 
     this.requestContextData = requestContextData;
@@ -422,9 +432,18 @@ public class DDSpanContext implements AgentSpan.Context, RequestContext<Object>,
     return baggageItems;
   }
 
+  public Map<String, String> getPropagatedHeaders() {
+    return propagatedHeaders;
+  }
+
   @Override
   public Iterable<Map.Entry<String, String>> baggageItems() {
     return baggageItems.entrySet();
+  }
+
+  @Override
+  public Iterable<Map.Entry<String, String>> propagatedHeaders() {
+    return propagatedHeaders.entrySet();
   }
 
   @Override

@@ -787,6 +787,11 @@ public class AgentTracer {
       return Collections.emptyList();
     }
 
+    @Override
+    public Iterable<Map.Entry<String, String>> propagatedHeaders() {
+      return Collections.emptyList();
+    }
+
     public PathwayContext getPathwayContext() {
       return NoopPathwayContext.INSTANCE;
     }
