@@ -12,12 +12,16 @@ public final class TraceInstrumentationConfig {
   public static final String TRACE_ENABLED = "trace.enabled";
   public static final String INTEGRATIONS_ENABLED = "integrations.enabled";
 
+  public static final String INTEGRATION_SYNAPSE_LEGACY_OPERATION_NAME =
+      "integration.synapse.legacy-operation-name";
   public static final String TRACE_ANNOTATIONS = "trace.annotations";
   public static final String TRACE_EXECUTORS_ALL = "trace.executors.all";
   public static final String TRACE_EXECUTORS = "trace.executors";
   public static final String TRACE_METHODS = "trace.methods";
   public static final String TRACE_CLASSES_EXCLUDE = "trace.classes.exclude";
+  public static final String TRACE_CLASSES_EXCLUDE_FILE = "trace.classes.exclude.file";
   public static final String TRACE_CLASSLOADERS_EXCLUDE = "trace.classloaders.exclude";
+  public static final String TRACE_CODESOURCES_EXCLUDE = "trace.codesources.exclude";
   public static final String TRACE_TESTS_ENABLED = "trace.tests.enabled";
 
   public static final String TRACE_THREAD_POOL_EXECUTORS_EXCLUDE =

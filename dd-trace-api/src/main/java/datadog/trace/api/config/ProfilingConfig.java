@@ -59,6 +59,8 @@ public final class ProfilingConfig {
   public static final String PROFILING_AUXILIARY_TYPE = "profiling.auxiliary";
   public static final String PROFILING_AUXILIARY_TYPE_DEFAULT = "none";
 
+  public static final String PROFILING_ASYNC_ENABLED = "profiling.async.enabled";
+  public static final boolean PROFILING_ASYNC_ENABLED_DEFAULT = false;
   public static final String PROFILING_ASYNC_LIBPATH = "profiling.async.lib";
   public static final String PROFILING_ASYNC_ALLOC_ENABLED = "profiling.async.alloc.enabled";
   public static final boolean PROFILING_ASYNC_ALLOC_ENABLED_DEFAULT = false;
@@ -94,6 +96,11 @@ public final class ProfilingConfig {
   public static final String PROFILING_TRACING_CONTEXT_RESERVED_MEMORY_TYPE =
       "profiling.tracing_context.memory.type";
   public static final String PROFILING_TRACING_CONTEXT_RESERVED_MEMORY_TYPE_DEFAULT = "heap";
+
+  public static final String PROFILING_TRACING_CONTEXT_MAX_SIZE =
+      "profiling.tracing_context.max_size.bytes";
+  public static final int PROFILING_TRACING_CONTEXT_MAX_SIZE_DEFAULT =
+      20_000; // 20k bytes is the default
 
   public static final String PROFILING_LEGACY_TRACING_INTEGRATION =
       "profiling.legacy.tracing.integration";
