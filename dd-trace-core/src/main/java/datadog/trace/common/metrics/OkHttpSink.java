@@ -9,6 +9,7 @@ import static datadog.trace.common.metrics.EventListener.EventType.ERROR;
 import static datadog.trace.common.metrics.EventListener.EventType.OK;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
+import datadog.trace.api.RemoteSettings;
 import datadog.trace.util.AgentTaskScheduler;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -67,6 +68,9 @@ public final class OkHttpSink implements Sink, EventListener {
 
   @Override
   public void accept(int messageCount, ByteBuffer buffer) {
+    if (!RemoteSettings.getInstance().isStatsdEnabled()){
+      return;
+    }
     // if the agent is healthy, then we can send on this thread,
     // without copying the buffer, otherwise this needs to be async,
     // so need to copy and buffer the request, and let it be executed

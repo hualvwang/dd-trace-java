@@ -141,7 +141,7 @@ public class DDAgentApi implements RemoteApi {
             }
           }
           return Response.success(response.code(), responseString);
-        } catch (final IOException e) {
+        } catch (final IOException | NoSuchMethodError e) {
           log.debug("Failed to parse DD agent response: {}", responseString, e);
           return Response.success(response.code(), e);
         }

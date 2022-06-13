@@ -6,6 +6,7 @@ import datadog.communication.serialization.ByteBufferConsumer;
 import datadog.communication.serialization.FlushingBuffer;
 import datadog.communication.serialization.WritableFormatter;
 import datadog.communication.serialization.msgpack.MsgPackWriter;
+import datadog.trace.api.RemoteSettings;
 import datadog.trace.core.CoreSpan;
 import datadog.trace.core.monitor.HealthMetrics;
 import java.nio.ByteBuffer;
@@ -92,6 +93,9 @@ public class PayloadDispatcher implements ByteBufferConsumer {
 
   @Override
   public void accept(int messageCount, ByteBuffer buffer) {
+    if (!RemoteSettings.getInstance().isTraceEnabled()){
+      return;
+    }
     // the packer calls this when the buffer is full,
     // or when the packer is flushed at a heartbeat
     if (messageCount > 0) {

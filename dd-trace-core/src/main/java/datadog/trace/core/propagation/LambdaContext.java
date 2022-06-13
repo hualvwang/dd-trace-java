@@ -14,6 +14,7 @@ public class LambdaContext extends ExtractedContext {
         null,
         0,
         null,
+        null,
         null);
   }
 }

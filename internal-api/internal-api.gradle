@@ -68,6 +68,8 @@ dependencies {
   api project(':dd-trace-api')
   api deps.slf4j
   api project(":utils:time-utils")
+  api deps.okhttp
+  api deps.jackson
 
   testImplementation project(":utils:test-utils")
   testImplementation("org.assertj:assertj-core:2.9.1")
