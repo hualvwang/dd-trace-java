@@ -111,6 +111,7 @@ public class TracerMapperMap {
             SamplingMechanism.DEFAULT,
             origin,
             Collections.<String, String>emptyMap(),
+            Collections.<String, String>emptyMap(),
             false,
             "type",
             0,
