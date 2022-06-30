@@ -1,6 +1,6 @@
 package datadog.trace.api;
 
-class RemoteSettingsValues {
+public class RemoteSettingsValues {
   private boolean TraceEnabled = true;
   private boolean StatsdEnabled = true;
 

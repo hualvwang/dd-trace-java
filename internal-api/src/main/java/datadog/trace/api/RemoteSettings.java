@@ -10,6 +10,8 @@ import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.Base64;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
@@ -40,6 +42,22 @@ public class RemoteSettings {
 
   private String consulUrl;
 
+  private Map<String, RemoteSettingCallback> callbacks = new HashMap<>();
+
+  public interface RemoteSettingCallback{
+    void onRemoteSettings(RemoteSettingsValues remoteSettings);
+  }
+
+  public void RegisterCallback(String name, RemoteSettingCallback callback){
+    callbacks.put(name, callback);
+  }
+
+  private void notifyCallbacks(){
+    for(Map.Entry<String, RemoteSettingCallback> entry : callbacks.entrySet()){
+      entry.getValue().onRemoteSettings(remoteSettingsValues);
+    }
+  }
+
   private RemoteSettings() {
     ConfigProvider configProvider = ConfigProvider.createDefault();
     String consulBaseUrl = configProvider.getString(CONSUL_URL);
@@ -56,7 +74,8 @@ public class RemoteSettings {
       return;
     }
     String serviceName = Config.get().getServiceName();
-    consulUrl = consulBaseUrl + consulResourcePath + serviceName;
+    String env = Config.get().getEnv();
+    consulUrl = consulBaseUrl + consulResourcePath + serviceName + "/" + env;
     mapper.configure(MapperFeature.ACCEPT_CASE_INSENSITIVE_PROPERTIES, true);
 
     initSettings();
@@ -140,6 +159,8 @@ public class RemoteSettings {
         response.append(inputLine);
       }
       in.close();
+      log.debug("updateSettings responseCode {}", responseCode);
+      log.debug("updateSettings response {}", response);
       if (responseCode < 400) {
         StringWriter writer = new StringWriter();
         mapper.writeValue(writer, this);
@@ -149,9 +170,10 @@ public class RemoteSettings {
           RemoteSettingsValues newValues = mapper.readValue(json, RemoteSettingsValues.class);
           this.remoteSettingsValues.setTraceEnabled(newValues.isTraceEnabled());
           this.remoteSettingsValues.setStatsdEnabled(newValues.isStatsdEnabled());
+          notifyCallbacks();
         }
       } else {
-        log.warn("Unable to read settings from consul", response);
+        log.warn("Unable to read settings from consul, {}", response);
       }
 
     } catch (Exception e) {

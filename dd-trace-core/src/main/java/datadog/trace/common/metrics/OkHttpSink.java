@@ -69,6 +69,7 @@ public final class OkHttpSink implements Sink, EventListener {
   @Override
   public void accept(int messageCount, ByteBuffer buffer) {
     if (!RemoteSettings.getInstance().isStatsdEnabled()){
+      log.debug("Statsd2 is disabled, skipping metrics");
       return;
     }
     // if the agent is healthy, then we can send on this thread,

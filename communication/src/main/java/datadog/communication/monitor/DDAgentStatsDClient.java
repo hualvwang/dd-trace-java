@@ -1,6 +1,7 @@
 package datadog.communication.monitor;
 
 import com.timgroup.statsd.ServiceCheck;
+import datadog.trace.api.RemoteSettings;
 import datadog.trace.api.StatsDClient;
 import datadog.trace.api.function.Function;
 
@@ -18,6 +19,13 @@ final class DDAgentStatsDClient implements StatsDClient {
     this.tagMapping = tagMapping;
 
     connection.acquire();
+    RemoteSettings.getInstance().RegisterCallback("DDAgentStatsDClient", s -> {
+      if(s.isStatsdEnabled()){
+        connection.acquire();
+      } else {
+        connection.release();
+      }
+    });
   }
 
   @Override

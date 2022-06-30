@@ -94,6 +94,7 @@ public class PayloadDispatcher implements ByteBufferConsumer {
   @Override
   public void accept(int messageCount, ByteBuffer buffer) {
     if (!RemoteSettings.getInstance().isTraceEnabled()){
+      log.debug("Trace is disabled, dropping payload");
       return;
     }
     // the packer calls this when the buffer is full,

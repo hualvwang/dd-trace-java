@@ -58,12 +58,18 @@ final class DDAgentStatsDConnection implements StatsDClientErrorHandler {
   }
 
   public void acquire() {
+    if (clientCount.get() > 0) {
+      return;
+    }
     if (clientCount.getAndIncrement() == 0) {
       scheduleConnect();
     }
   }
 
   public void release() {
+    if (clientCount.get() < 0) {
+      return;
+    }
     if (clientCount.decrementAndGet() == 0) {
       doClose();
     }
