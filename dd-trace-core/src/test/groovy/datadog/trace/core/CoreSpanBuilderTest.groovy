@@ -1,7 +1,8 @@
 package datadog.trace.core
 
 import datadog.trace.api.Config
-import datadog.trace.api.DDId
+import datadog.trace.api.DDSpanId
+import datadog.trace.api.DDTraceId
 import datadog.trace.api.sampling.PrioritySampling
 import datadog.trace.bootstrap.instrumentation.api.AgentScope
 import datadog.trace.bootstrap.instrumentation.api.AgentTracer
@@ -15,6 +16,7 @@ import datadog.trace.core.test.DDCoreSpecification
 import static datadog.trace.api.DDTags.LANGUAGE_TAG_KEY
 import static datadog.trace.api.DDTags.LANGUAGE_TAG_VALUE
 import static datadog.trace.api.DDTags.ORIGIN_KEY
+import static datadog.trace.api.DDTags.PID_TAG
 import static datadog.trace.api.DDTags.RUNTIME_ID_TAG
 import static datadog.trace.api.DDTags.THREAD_ID
 import static datadog.trace.api.DDTags.THREAD_NAME
@@ -70,6 +72,7 @@ class CoreSpanBuilderTest extends DDCoreSpecification {
       (THREAD_ID)       : Thread.currentThread().getId(),
       (RUNTIME_ID_TAG)  : Config.get().getRuntimeId(),
       (LANGUAGE_TAG_KEY): LANGUAGE_TAG_VALUE,
+      (PID_TAG) : Config.get().getProcessId()
     ]
 
     when:
@@ -159,15 +162,16 @@ class CoreSpanBuilderTest extends DDCoreSpecification {
 
   def "should link to parent span"() {
     setup:
-    final DDId spanId = DDId.ONE
-    final DDId expectedParentId = spanId
+    final long spanId = 1
+    final DDTraceId traceId = DDTraceId.ONE
+    final long expectedParentId = spanId
 
     final DDSpanContext mockedContext = Mock()
-    1 * mockedContext.getTraceId() >> spanId
+    1 * mockedContext.getTraceId() >> traceId
     1 * mockedContext.getSpanId() >> spanId
     _ * mockedContext.getServiceName() >> "foo"
     1 * mockedContext.getBaggageItems() >> [:]
-    1 * mockedContext.getTrace() >> tracer.pendingTraceFactory.create(DDId.ONE)
+    1 * mockedContext.getTrace() >> tracer.pendingTraceFactory.create(DDTraceId.ONE)
     _ * mockedContext.getPathwayContext() >> NoopPathwayContext.INSTANCE
 
     final String expectedName = "fakeName"
@@ -183,7 +187,7 @@ class CoreSpanBuilderTest extends DDCoreSpecification {
 
     expect:
     actualContext.getParentId() == expectedParentId
-    actualContext.getTraceId() == spanId
+    actualContext.getTraceId() == traceId
   }
 
   def "should link to parent span implicitly"() {
@@ -191,7 +195,7 @@ class CoreSpanBuilderTest extends DDCoreSpecification {
     final AgentScope parent = tracer.activateSpan(noopParent ?
       AgentTracer.NoopAgentSpan.INSTANCE : tracer.buildSpan("parent").withServiceName("service").start())
 
-    final DDId expectedParentId = noopParent ? DDId.ZERO : parent.span().context().getSpanId()
+    final long expectedParentId = noopParent ? DDSpanId.ZERO : parent.span().context().getSpanId()
 
     final String expectedName = "fakeName"
 
@@ -325,8 +329,8 @@ class CoreSpanBuilderTest extends DDCoreSpecification {
 
     where:
     extractedContext | _
-    new ExtractedContext(DDId.ONE, DDId.from(2), PrioritySampling.SAMPLER_DROP, null, 0, [:], [:], null, DatadogTags.factory().fromHeaderValue("_dd.p.dm=934086a686-4,_dd.p.anytag=value"))                 | _
-    new ExtractedContext(DDId.from(3), DDId.from(4), PrioritySampling.SAMPLER_KEEP, "some-origin", 0, ["asdf": "qwer"], [(ORIGIN_KEY): "some-origin", "zxcv": "1234"], null, DatadogTags.factory().empty()) | _
+    new ExtractedContext(DDTraceId.ONE, 2, PrioritySampling.SAMPLER_DROP, null, 0, [:], [:], null, DatadogTags.factory().fromHeaderValue("_dd.p.dm=934086a686-4,_dd.p.anytag=value"))                 | _
+    new ExtractedContext(DDTraceId.from(3), 4, PrioritySampling.SAMPLER_KEEP, "some-origin", 0, ["asdf": "qwer"], [(ORIGIN_KEY): "some-origin", "zxcv": "1234"], null, DatadogTags.factory().empty()) | _
   }
 
   def "TagContext should populate default span details"() {
@@ -335,14 +339,14 @@ class CoreSpanBuilderTest extends DDCoreSpecification {
     final DDSpan span = tracer.buildSpan("op name").asChildOf(tagContext).start()
 
     expect:
-    span.traceId != DDId.ZERO
-    span.parentId == DDId.ZERO
+    span.traceId != DDTraceId.ZERO
+    span.parentId == DDSpanId.ZERO
     span.samplingPriority == null
     span.context().origin == tagContext.origin
     span.context().baggageItems == [:]
     span.context().tags == tagContext.tags + [(RUNTIME_ID_TAG)  : Config.get().getRuntimeId(),
       (LANGUAGE_TAG_KEY): LANGUAGE_TAG_VALUE,
-      (THREAD_NAME)     : thread.name, (THREAD_ID): thread.id]
+      (THREAD_NAME)     : thread.name, (THREAD_ID): thread.id, (PID_TAG) : Config.get().getProcessId()]
 
     where:
     tagContext                                      | _
@@ -362,6 +366,7 @@ class CoreSpanBuilderTest extends DDCoreSpecification {
       (THREAD_ID)       : Thread.currentThread().getId(),
       (RUNTIME_ID_TAG)  : Config.get().getRuntimeId(),
       (LANGUAGE_TAG_KEY): LANGUAGE_TAG_VALUE,
+      (PID_TAG) : Config.get().getProcessId()
     ]
 
     cleanup:

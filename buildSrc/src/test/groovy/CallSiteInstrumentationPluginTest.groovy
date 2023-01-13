@@ -10,7 +10,7 @@ class CallSiteInstrumentationPluginTest extends Specification {
     plugins {
       id 'java'
       id 'call-site-instrumentation'
-      id("com.diffplug.spotless") version "5.11.0"
+      id("com.diffplug.spotless") version "6.11.0"
     }
     
     sourceCompatibility = JavaVersion.VERSION_1_8
@@ -92,7 +92,7 @@ class CallSiteInstrumentationPluginTest extends Specification {
   private static void createGradleProject(final File buildDir, final String gradleFile, final String advice) {
     final projectFolder = new File(System.getProperty('user.dir')).parentFile
     final callSiteJar = resolve(projectFolder, 'buildSrc', 'call-site-instrumentation-plugin')
-    final gradleFileContent = gradleFile.replace('$$ROOT_FOLDER$$', projectFolder.toString())
+    final gradleFileContent = gradleFile.replace('$$ROOT_FOLDER$$', projectFolder.toString().replace("\\","\\\\"))
 
     final buildGradle = resolve(buildDir, 'build.gradle')
     buildGradle.text = gradleFileContent

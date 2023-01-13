@@ -15,7 +15,8 @@ import static datadog.trace.core.propagation.HttpCodec.X_FORWARDED_PROTO_KEY;
 import static datadog.trace.core.propagation.HttpCodec.X_REAL_IP_KEY;
 
 import datadog.trace.api.Config;
-import datadog.trace.api.DDId;
+import datadog.trace.api.DDSpanId;
+import datadog.trace.api.DDTraceId;
 import datadog.trace.api.Functions;
 import datadog.trace.api.cache.DDCache;
 import datadog.trace.api.cache.DDCaches;
@@ -26,13 +27,15 @@ import datadog.trace.bootstrap.instrumentation.api.TagContext;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.TreeMap;
 
 public abstract class ContextInterpreter implements AgentPropagation.KeyClassifier {
 
   protected final Map<String, String> taggedHeaders;
+  protected final Map<String, String> baggageMapping;
 
-  protected DDId traceId;
-  protected DDId spanId;
+  protected DDTraceId traceId;
+  protected long spanId;
   protected int samplingPriority;
   protected Map<String, String> tags;
   protected Map<String, String> baggage;
@@ -55,8 +58,10 @@ public abstract class ContextInterpreter implements AgentPropagation.KeyClassifi
     return CACHE.computeIfAbsent(key, Functions.LowerCase.INSTANCE);
   }
 
-  protected ContextInterpreter(Map<String, String> taggedHeaders, Config config) {
+  protected ContextInterpreter(
+      Map<String, String> taggedHeaders, Map<String, String> baggageMapping, Config config) {
     this.taggedHeaders = taggedHeaders;
+    this.baggageMapping = baggageMapping;
     this.customIpHeaderName = config.getTraceClientIpHeader();
     this.clientIpResolutionEnabled = config.isTraceClientIpResolverEnabled();
     this.clientIpWithoutAppSec = config.isClientIpEnabled();
@@ -65,15 +70,17 @@ public abstract class ContextInterpreter implements AgentPropagation.KeyClassifi
 
   public abstract static class Factory {
 
-    public ContextInterpreter create(Map<String, String> tagsMapping) {
-      return construct(cleanMapping(tagsMapping));
+    public ContextInterpreter create(
+        Map<String, String> tagsMapping, Map<String, String> baggageMapping) {
+      return construct(cleanMapping(tagsMapping), cleanMapping(baggageMapping));
     }
 
-    protected abstract ContextInterpreter construct(Map<String, String> tagsMapping);
+    protected abstract ContextInterpreter construct(
+        Map<String, String> tagsMapping, Map<String, String> baggageMapping);
 
-    protected Map<String, String> cleanMapping(Map<String, String> taggedHeaders) {
-      final Map<String, String> cleanedMapping = new HashMap<>(taggedHeaders.size() * 4 / 3);
-      for (Map.Entry<String, String> association : taggedHeaders.entrySet()) {
+    protected Map<String, String> cleanMapping(Map<String, String> mapping) {
+      final Map<String, String> cleanedMapping = new HashMap<>(mapping.size() * 4 / 3);
+      for (Map.Entry<String, String> association : mapping.entrySet()) {
         cleanedMapping.put(
             association.getKey().trim().toLowerCase(), association.getValue().trim().toLowerCase());
       }
@@ -176,10 +183,42 @@ public abstract class ContextInterpreter implements AgentPropagation.KeyClassifi
     return false;
   }
 
+  protected final boolean handleTags(String key, String value) {
+    if (taggedHeaders.isEmpty() || value == null) {
+      return false;
+    }
+    final String lowerCaseKey = toLowerCase(key);
+    final String mappedKey = taggedHeaders.get(lowerCaseKey);
+    if (null != mappedKey) {
+      if (tags.isEmpty()) {
+        tags = new TreeMap<>();
+      }
+      tags.put(mappedKey, HttpCodec.decode(HttpCodec.firstHeaderValue(value)));
+      return true;
+    }
+    return false;
+  }
+
+  protected final boolean handleMappedBaggage(String key, String value) {
+    if (baggageMapping.isEmpty() || value == null) {
+      return false;
+    }
+    final String lowerCaseKey = toLowerCase(key);
+    final String mappedKey = baggageMapping.get(lowerCaseKey);
+    if (null != mappedKey) {
+      if (baggage.isEmpty()) {
+        baggage = new TreeMap<>();
+      }
+      baggage.put(mappedKey, HttpCodec.decode(value));
+      return true;
+    }
+    return false;
+  }
+
   public ContextInterpreter reset() {
-    traceId = DDId.ZERO;
-    spanId = DDId.ZERO;
-    samplingPriority = defaultSamplingPriority();
+    traceId = DDTraceId.ZERO;
+    spanId = DDSpanId.ZERO;
+    samplingPriority = PrioritySampling.UNSET;
     origin = null;
     endToEndStartTime = 0;
     tags = Collections.emptyMap();
@@ -195,13 +234,13 @@ public abstract class ContextInterpreter implements AgentPropagation.KeyClassifi
 
   TagContext build() {
     if (valid) {
-      if (!DDId.ZERO.equals(traceId)) {
+      if (!DDTraceId.ZERO.equals(traceId)) {
         final ExtractedContext context;
         context =
             new ExtractedContext(
                 traceId,
                 spanId,
-                samplingPriority,
+                samplingPriorityOrDefault(samplingPriority),
                 origin,
                 endToEndStartTime,
                 baggage,
@@ -210,8 +249,12 @@ public abstract class ContextInterpreter implements AgentPropagation.KeyClassifi
                 datadogTags,
                 propagatedHeaders);
         return context;
-      } else if (origin != null || !tags.isEmpty() || httpHeaders != null) {
-        return new TagContext(origin, tags, httpHeaders);
+      } else if (origin != null
+          || !tags.isEmpty()
+          || httpHeaders != null
+          || samplingPriority != PrioritySampling.UNSET) {
+        return new TagContext(
+            origin, tags, httpHeaders, samplingPriorityOrDefault(samplingPriority));
       }
     }
     return null;
@@ -225,10 +268,16 @@ public abstract class ContextInterpreter implements AgentPropagation.KeyClassifi
     return PrioritySampling.UNSET;
   }
 
-  private final TagContext.HttpHeaders getHeaders() {
+  private TagContext.HttpHeaders getHeaders() {
     if (httpHeaders == null) {
       httpHeaders = new TagContext.HttpHeaders();
     }
     return httpHeaders;
+  }
+
+  private int samplingPriorityOrDefault(int samplingPriority) {
+    return samplingPriority == PrioritySampling.UNSET
+        ? defaultSamplingPriority()
+        : samplingPriority;
   }
 }

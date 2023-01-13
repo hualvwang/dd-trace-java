@@ -1,6 +1,7 @@
 package datadog.trace.core.propagation
 
-import datadog.trace.api.DDId
+import datadog.trace.api.DDSpanId
+import datadog.trace.api.DDTraceId
 import datadog.trace.bootstrap.ActiveSubsystems
 import datadog.trace.bootstrap.instrumentation.api.TagContext
 import datadog.trace.api.sampling.PrioritySampling
@@ -15,7 +16,7 @@ import static datadog.trace.core.propagation.HaystackHttpCodec.TRACE_ID_KEY
 
 class HaystackHttpExtractorTest extends DDSpecification {
 
-  HttpCodec.Extractor extractor = HaystackHttpCodec.newExtractor(["SOME_HEADER": "some-tag"])
+  HttpCodec.Extractor extractor = HaystackHttpCodec.newExtractor(["SOME_HEADER": "some-tag"], ["SOME_CUSTOM_BAGGAGE_HEADER": "some-baggage"])
 
   boolean origAppSecActive
 
@@ -40,17 +41,19 @@ class HaystackHttpExtractorTest extends DDSpecification {
       (OT_BAGGAGE_PREFIX.toUpperCase() + "k2"): "%76%32",             // v2 encoded once
       (OT_BAGGAGE_PREFIX.toUpperCase() + "k3"): "%25%37%36%25%33%33", // v3 encoded twice
       SOME_HEADER                             : "my-interesting-info",
+      SOME_CUSTOM_BAGGAGE_HEADER              : "my-interesting-baggage-info",
     ]
 
     when:
     final ExtractedContext context = extractor.extract(headers, ContextVisitors.stringValuesMap())
 
     then:
-    context.traceId == DDId.from(traceId)
-    context.spanId == DDId.from(spanId)
+    context.traceId == DDTraceId.from(traceId)
+    context.spanId == DDSpanId.from(spanId)
     context.baggage == ["k1": "v1", "k2": "v2",
       "k3": "%76%33", // expect value decoded only once
-      "Haystack-Trace-ID": traceUuid, "Haystack-Span-ID": spanUuid]
+      "Haystack-Trace-ID": traceUuid, "Haystack-Span-ID": spanUuid,
+      "some-baggage": "my-interesting-baggage-info"]
     context.tags == ["some-tag": "my-interesting-info"]
     context.samplingPriority == samplingPriority
     context.origin == origin
@@ -92,7 +95,7 @@ class HaystackHttpExtractorTest extends DDSpecification {
     then:
     context instanceof ExtractedContext
     context.traceId.toLong() == 1
-    context.spanId.toLong() == 2
+    context.spanId == 2
     context.forwarded == "for=$forwardedIp:$forwardedPort"
 
     where:
@@ -124,7 +127,7 @@ class HaystackHttpExtractorTest extends DDSpecification {
     then:
     context instanceof ExtractedContext
     context.traceId.toLong() == 1
-    context.spanId.toLong() == 2
+    context.spanId == 2
     context.XForwardedFor == forwardedIp
     context.XForwardedPort == forwardedPort
 
@@ -219,21 +222,21 @@ class HaystackHttpExtractorTest extends DDSpecification {
     }
 
     where:
-    traceId                                | spanId                                 | expectedTraceId                | expectedSpanId
-    "-1"                                   | "1"                                    | null                           | DDId.ZERO
-    "1"                                    | "-1"                                   | null                           | DDId.ZERO
-    "0"                                    | "1"                                    | null                           | DDId.ZERO
-    "00001"                                | "00001"                                | DDId.ONE                       | DDId.ONE
-    "463ac35c9f6413ad"                     | "463ac35c9f6413ad"                     | DDId.from(5060571933882717101) | DDId.from(5060571933882717101)
-    "463ac35c9f6413ad48485a3953bb6124"     | "1"                                    | DDId.from(5208512171318403364) | DDId.ONE
-    "44617461-646f-6721-463a-c35c9f6413ad" | "44617461-646f-6721-463a-c35c9f6413ad" | DDId.from(5060571933882717101) | DDId.from(5060571933882717101)
-    "f" * 16                               | "1"                                    | DDId.MAX                       | DDId.ONE
-    "a" * 16 + "f" * 16                    | "1"                                    | DDId.MAX                       | DDId.ONE
-    "1" + "f" * 32                         | "1"                                    | null                           | DDId.ONE
-    "0" + "f" * 32                         | "1"                                    | null                           | DDId.ONE
-    "1"                                    | "f" * 16                               | DDId.ONE                       | DDId.MAX
-    "1"                                    | "1" + "f" * 16                         | null                           | DDId.ZERO
-    "1"                                    | "000" + "f" * 16                       | DDId.ONE                       | DDId.MAX
+    traceId                                | spanId                                 | expectedTraceId                     | expectedSpanId
+    "-1"                                   | "1"                                    | null                                | DDSpanId.ZERO
+    "1"                                    | "-1"                                   | null                                | DDSpanId.ZERO
+    "0"                                    | "1"                                    | null                                | DDSpanId.ZERO
+    "00001"                                | "00001"                                | DDTraceId.ONE                       | 1
+    "463ac35c9f6413ad"                     | "463ac35c9f6413ad"                     | DDTraceId.from(5060571933882717101) | 5060571933882717101
+    "463ac35c9f6413ad48485a3953bb6124"     | "1"                                    | DDTraceId.from(5208512171318403364) | 1
+    "44617461-646f-6721-463a-c35c9f6413ad" | "44617461-646f-6721-463a-c35c9f6413ad" | DDTraceId.from(5060571933882717101) | 5060571933882717101
+    "f" * 16                               | "1"                                    | DDTraceId.MAX                       | 1
+    "a" * 16 + "f" * 16                    | "1"                                    | DDTraceId.MAX                       | 1
+    "1" + "f" * 32                         | "1"                                    | null                                | 1
+    "0" + "f" * 32                         | "1"                                    | null                                | 1
+    "1"                                    | "f" * 16                               | DDTraceId.ONE                       | DDSpanId.MAX
+    "1"                                    | "1" + "f" * 16                         | null                                | DDSpanId.ZERO
+    "1"                                    | "000" + "f" * 16                       | DDTraceId.ONE                       | DDSpanId.MAX
   }
 
 

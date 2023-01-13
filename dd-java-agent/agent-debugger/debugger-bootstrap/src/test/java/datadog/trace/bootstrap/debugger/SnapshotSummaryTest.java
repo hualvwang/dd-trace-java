@@ -16,10 +16,9 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 public class SnapshotSummaryTest {
+  private static final String CLASS_NAME = "com.datadog.debugger.SomeClass";
   private static final ProbeLocation PROBE_LOCATION =
-      new ProbeLocation("com.datadog.debugger.SomeClass", "someMethod", null, null);
-  private static final ProbeDetails PROBE_DETAILS =
-      new ProbeDetails(UUID.randomUUID().toString(), PROBE_LOCATION);
+      new ProbeLocation(CLASS_NAME, "someMethod", null, null);
 
   @BeforeAll
   public static void staticSetup() {
@@ -28,13 +27,21 @@ public class SnapshotSummaryTest {
 
   @Test
   public void testSummaryEmptySnapshot() {
-    Snapshot snapshot = new Snapshot(Thread.currentThread(), PROBE_DETAILS);
+    Snapshot snapshot =
+        new Snapshot(
+            Thread.currentThread(),
+            new ProbeDetails(UUID.randomUUID().toString(), PROBE_LOCATION),
+            CLASS_NAME);
     assertEquals("SomeClass.someMethod()", snapshot.getSummary());
   }
 
   @Test
   public void testSummaryEntryExitSnapshot() {
-    Snapshot snapshot = new Snapshot(Thread.currentThread(), PROBE_DETAILS);
+    Snapshot snapshot =
+        new Snapshot(
+            Thread.currentThread(),
+            new ProbeDetails(UUID.randomUUID().toString(), PROBE_LOCATION),
+            CLASS_NAME);
     CapturedContext entry = new CapturedContext();
     HashMap<String, String> argMap = new HashMap<>();
     argMap.put("foo", "bar");
@@ -60,7 +67,11 @@ public class SnapshotSummaryTest {
 
   @Test
   public void testSummaryEntryExitSnapshotWithLocalVars() {
-    Snapshot snapshot = new Snapshot(Thread.currentThread(), PROBE_DETAILS);
+    Snapshot snapshot =
+        new Snapshot(
+            Thread.currentThread(),
+            new ProbeDetails(UUID.randomUUID().toString(), PROBE_LOCATION),
+            CLASS_NAME);
     CapturedContext entry = new CapturedContext();
     entry.addArguments(
         new Snapshot.CapturedValue[] {
@@ -90,7 +101,11 @@ public class SnapshotSummaryTest {
 
   @Test
   public void testSummaryLineSnapshot() {
-    Snapshot snapshot = new Snapshot(Thread.currentThread(), PROBE_DETAILS);
+    Snapshot snapshot =
+        new Snapshot(
+            Thread.currentThread(),
+            new ProbeDetails(UUID.randomUUID().toString(), PROBE_LOCATION),
+            CLASS_NAME);
     StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
     // top frame is actually getStackTrace, we want the test method
     StackTraceElement topFrame = stackTrace[1];
@@ -124,11 +139,11 @@ public class SnapshotSummaryTest {
 
   @Test
   public void testUnexpectedStackFrameFormat() {
-    SnapshotSummaryBuilder snapshotSummaryBuilder = new SnapshotSummaryBuilder(PROBE_DETAILS);
+    SnapshotSummaryBuilder snapshotSummaryBuilder = new SnapshotSummaryBuilder(PROBE_LOCATION);
     snapshotSummaryBuilder.addStack(Arrays.asList(new CapturedStackFrame("foobar", 123)));
     assertEquals("foobar()", snapshotSummaryBuilder.build());
 
-    SnapshotSummaryBuilder snapshotSummaryBuilder2 = new SnapshotSummaryBuilder(PROBE_DETAILS);
+    SnapshotSummaryBuilder snapshotSummaryBuilder2 = new SnapshotSummaryBuilder(PROBE_LOCATION);
     snapshotSummaryBuilder2.addStack(Arrays.asList(new CapturedStackFrame("foobar()", 123)));
     assertEquals("foobar()", snapshotSummaryBuilder2.build());
   }
@@ -138,7 +153,8 @@ public class SnapshotSummaryTest {
     ProbeLocation location =
         new ProbeLocation(null, null, "SomeFile", Collections.singletonList("13"));
     // if the line probe had a stacktrace we would use the method information from the stacktrace
-    Snapshot snapshot = new Snapshot(Thread.currentThread(), new ProbeDetails("id", location));
+    Snapshot snapshot =
+        new Snapshot(Thread.currentThread(), new ProbeDetails("id", location), CLASS_NAME);
 
     CapturedContext lineCapture = new CapturedContext();
     lineCapture.addLocals(new Snapshot.CapturedValue[] {});

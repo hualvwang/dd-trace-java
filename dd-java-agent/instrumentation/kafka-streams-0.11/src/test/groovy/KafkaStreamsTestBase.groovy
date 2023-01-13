@@ -1,7 +1,4 @@
 import datadog.trace.agent.test.AgentTestRunner
-import datadog.trace.agent.test.checkpoints.CheckpointValidationMode
-import datadog.trace.agent.test.checkpoints.CheckpointValidator
-import datadog.trace.api.Platform
 import datadog.trace.bootstrap.instrumentation.api.InstrumentationTags
 import datadog.trace.bootstrap.instrumentation.api.Tags
 import datadog.trace.core.datastreams.StatsGroup
@@ -50,7 +47,6 @@ abstract class KafkaStreamsTestBase extends AgentTestRunner {
   @Ignore("Repeatedly fails with the wrong parent span https://github.com/DataDog/dd-trace-java/issues/3865")
   def "test kafka produce and consume with streams in-between"() {
     setup:
-    CheckpointValidator.excludeValidations_DONOTUSE_I_REPEAT_DO_NOT_USE(CheckpointValidationMode.INTERVALS)
     def config = new Properties()
     def senderProps = KafkaTestUtils.senderProps(embeddedKafka.getBrokersAsString())
     config.putAll(senderProps)
@@ -74,7 +70,7 @@ abstract class KafkaStreamsTestBase extends AgentTestRunner {
           // this is the last processing step so we should see 2 traces here
           TEST_WRITER.waitForTraces(2)
           TEST_TRACER.activeSpan().setTag("testing", 123)
-          if (Platform.isJavaVersionAtLeast(8) && isDataStreamsEnabled()) {
+          if (isDataStreamsEnabled()) {
             TEST_DATA_STREAMS_WRITER.waitForGroups(1)
           }
           records.add(record)
@@ -96,7 +92,7 @@ abstract class KafkaStreamsTestBase extends AgentTestRunner {
         String apply(String textLine) {
           TEST_WRITER.waitForTraces(1) // ensure consistent ordering of traces
           TEST_TRACER.activeSpan().setTag("asdf", "testing")
-          if (Platform.isJavaVersionAtLeast(8) && isDataStreamsEnabled()) {
+          if (isDataStreamsEnabled()) {
             TEST_DATA_STREAMS_WRITER.waitForGroups(1)
           }
           return textLine.toLowerCase()
@@ -252,7 +248,7 @@ abstract class KafkaStreamsTestBase extends AgentTestRunner {
     new String(headers.headers("x-datadog-trace-id").iterator().next().value()) == "${TEST_WRITER[1][0].traceId}"
     new String(headers.headers("x-datadog-parent-id").iterator().next().value()) == "${TEST_WRITER[1][0].spanId}"
 
-    if (Platform.isJavaVersionAtLeast(8) && isDataStreamsEnabled()) {
+    if (isDataStreamsEnabled()) {
       StatsGroup originProducerPoint = TEST_DATA_STREAMS_WRITER.groups.find { it.parentHash == 0 }
       verifyAll(originProducerPoint) {
         edgeTags == ["topic:$STREAM_PENDING", "type:internal"]

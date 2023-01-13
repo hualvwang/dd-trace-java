@@ -17,7 +17,7 @@ import com.datadog.appsec.util.StandardizedLogging;
 import com.google.auto.service.AutoService;
 import com.squareup.moshi.*;
 import datadog.trace.api.Config;
-import datadog.trace.api.ProductActivationConfig;
+import datadog.trace.api.ProductActivation;
 import datadog.trace.api.gateway.Flow;
 import io.sqreen.powerwaf.Additive;
 import io.sqreen.powerwaf.Powerwaf;
@@ -48,15 +48,7 @@ public class PowerWAFModule implements AppSecModule {
   private static final int MAX_DEPTH = 10;
   private static final int MAX_ELEMENTS = 150;
   private static final int MAX_STRING_SIZE = 4096;
-  private static final Powerwaf.Limits LIMITS =
-      new Powerwaf.Limits(
-          MAX_DEPTH,
-          MAX_ELEMENTS,
-          MAX_STRING_SIZE,
-          /* set effectively infinite budgets. Don't use Long.MAX_VALUE, because
-           * traditionally powerwaf has had problems with too large budgets */
-          ((long) Integer.MAX_VALUE) * 1000,
-          ((long) Integer.MAX_VALUE) * 1000);
+  private static volatile Powerwaf.Limits LIMITS;
   private static final Class<?> PROXY_CLASS =
       Proxy.getProxyClass(PowerWAFModule.class.getClassLoader(), Set.class);
   private static final Constructor<?> PROXY_CLASS_CONSTRUCTOR;
@@ -133,6 +125,20 @@ public class PowerWAFModule implements AppSecModule {
     actionParams.put("grpc_status_code", 10);
     DEFAULT_ACTIONS =
         Collections.singletonMap("block", new ActionInfo("block_request", actionParams));
+    createLimitsObject();
+  }
+
+  // used in testing
+  static void createLimitsObject() {
+    LIMITS =
+        new Powerwaf.Limits(
+            MAX_DEPTH,
+            MAX_ELEMENTS,
+            MAX_STRING_SIZE,
+            /* set effectively infinite budgets. Don't use Long.MAX_VALUE, because
+             * traditionally powerwaf has had problems with too large budgets */
+            ((long) Integer.MAX_VALUE) * 1000,
+            Config.get().getAppSecWafTimeout());
   }
 
   private final boolean wafMetricsEnabled =
@@ -164,8 +170,8 @@ public class PowerWAFModule implements AppSecModule {
     Optional<Object> initialConfig =
         appSecConfigService.addSubConfigListener("waf", this::applyConfig);
 
-    ProductActivationConfig appSecEnabledConfig = Config.get().getAppSecEnabledConfig();
-    if (appSecEnabledConfig == ProductActivationConfig.FULLY_ENABLED) {
+    ProductActivation appSecEnabledConfig = Config.get().getAppSecActivation();
+    if (appSecEnabledConfig == ProductActivation.FULLY_ENABLED) {
       if (!initialConfig.isPresent()) {
         throw new AppSecModuleActivationException("No initial config for WAF");
       }

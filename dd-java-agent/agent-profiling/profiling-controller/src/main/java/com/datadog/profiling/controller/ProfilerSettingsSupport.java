@@ -21,10 +21,11 @@ public abstract class ProfilerSettingsSupport {
   protected final int exceptionHistogramTopItems;
   protected final int exceptionHistogramMaxSize;
   protected final boolean hotspotsEnabled;
-  protected final boolean checkpointsEnabled;
   protected final boolean endpointsEnabled;
   protected final String auxiliaryProfiler;
   protected final String perfEventsParanoid;
+
+  protected final boolean hasNativeStacks;
 
   protected ProfilerSettingsSupport() {
     ConfigProvider configProvider = ConfigProvider.getInstance();
@@ -65,10 +66,6 @@ public abstract class ProfilerSettingsSupport {
             ProfilingConfig.PROFILING_EXCEPTION_HISTOGRAM_MAX_COLLECTION_SIZE,
             ProfilingConfig.PROFILING_EXCEPTION_HISTOGRAM_MAX_COLLECTION_SIZE_DEFAULT);
     hotspotsEnabled = configProvider.getBoolean(ProfilingConfig.PROFILING_HOTSPOTS_ENABLED, false);
-    checkpointsEnabled =
-        !configProvider.getBoolean(
-            ProfilingConfig.PROFILING_LEGACY_TRACING_INTEGRATION,
-            ProfilingConfig.PROFILING_LEGACY_TRACING_INTEGRATION_DEFAULT);
     endpointsEnabled =
         configProvider.getBoolean(
             ProfilingConfig.PROFILING_ENDPOINT_COLLECTION_ENABLED,
@@ -78,6 +75,12 @@ public abstract class ProfilerSettingsSupport {
             ProfilingConfig.PROFILING_AUXILIARY_TYPE,
             ProfilingConfig.PROFILING_AUXILIARY_TYPE_DEFAULT);
     perfEventsParanoid = readPerfEventsParanoidSetting();
+    hasNativeStacks =
+        !"no"
+            .equalsIgnoreCase(
+                configProvider.getString(
+                    ProfilingConfig.PROFILING_ASYNC_CSTACK,
+                    ProfilingConfig.PROFILING_ASYNC_CSTACK_DEFAULT));
   }
 
   /** To be defined in controller specific way. Eg. one could emit JFR events. */

@@ -5,7 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import datadog.communication.serialization.ByteBufferConsumer
 import datadog.communication.serialization.FlushingBuffer
 import datadog.communication.serialization.msgpack.MsgPackWriter
-import datadog.trace.api.DDId
+import datadog.trace.api.DDSpanId
+import datadog.trace.api.DDTraceId
 import datadog.trace.api.WellKnownTags
 import datadog.trace.api.intake.TrackType
 import datadog.trace.api.sampling.PrioritySampling
@@ -27,7 +28,7 @@ import static datadog.trace.agent.test.server.http.TestHttpServer.httpServer
 @Timeout(20)
 class DDIntakeApiTest extends DDCoreSpecification {
 
-  static WellKnownTags wellKnownTags = new WellKnownTags("my-runtime-id", "my-hostname", "my-env","my-service","my-version","my-language")
+  static WellKnownTags wellKnownTags = new WellKnownTags("my-runtime-id", "my-hostname", "my-env", "my-service", "my-version", "my-language")
   static String apiKey = "my-secret-apikey"
   static msgPackMapper = new ObjectMapper(new MessagePackFactory())
 
@@ -62,7 +63,7 @@ class DDIntakeApiTest extends DDCoreSpecification {
     intake.close()
 
     where:
-    trackType | apiVersion
+    trackType             | apiVersion
     TrackType.CITESTCYCLE | "v2"
   }
 
@@ -73,9 +74,9 @@ class DDIntakeApiTest extends DDCoreSpecification {
     def intake = httpServer {
       handlers {
         post(path) {
-          if(retry < 5) {
+          if (retry < 5) {
             response.status(503).send()
-            retry+=1
+            retry += 1
           } else {
             response.status(200).send()
           }
@@ -96,7 +97,41 @@ class DDIntakeApiTest extends DDCoreSpecification {
     intake.close()
 
     where:
-    trackType | apiVersion
+    trackType             | apiVersion
+    TrackType.CITESTCYCLE | "v2"
+  }
+
+  def "retries when backend returns 429 Too Many Requests"() {
+    setup:
+    def retry = 0
+    def path = buildIntakePath(trackType, apiVersion)
+    def intake = httpServer {
+      handlers {
+        post(path) {
+          if (retry < 1) {
+            response.status(429).addHeader("x-ratelimit-reset", "0").send()
+            retry += 1
+          } else {
+            response.status(200).send()
+          }
+        }
+      }
+    }
+
+    def client = createIntakeApi(intake.address.toString(), trackType)
+    def payload = prepareTraces(trackType, [])
+
+    expect:
+    def response = client.sendSerializedTraces(payload)
+    response.success()
+    response.status() == 200
+    intake.getLastRequest().path == path
+
+    cleanup:
+    intake.close()
+
+    where:
+    trackType             | apiVersion
     TrackType.CITESTCYCLE | "v2"
   }
 
@@ -124,34 +159,34 @@ class DDIntakeApiTest extends DDCoreSpecification {
 
     where:
     // spotless:off
-    trackType             | apiVersion | traces | expectedRequestBody
-    TrackType.CITESTCYCLE | "v2"       | []     | [:]
+    trackType             | apiVersion | traces                                          | expectedRequestBody
+    TrackType.CITESTCYCLE | "v2"       | []                                              | [:]
     TrackType.CITESTCYCLE | "v2"       | [[buildSpan(1L, "service.name", "my-service")]] | new TreeMap<>([
-      "version":1,
+      "version" : 1,
       "metadata": new TreeMap<>([
-        "*":new TreeMap<>([
-          "env":"my-env",
-          "runtime-id":"my-runtime-id",
-          "language":"my-language"
+        "*": new TreeMap<>([
+          "env"       : "my-env",
+          "runtime-id": "my-runtime-id",
+          "language"  : "my-language"
         ])]),
-       "events":[new TreeMap<>([
-         "type":"span",
-         "version":1,
-         "content":new TreeMap<>([
-           "service":"my-service",
-           "name":"fakeOperation",
-           "resource":"fakeResource",
-           "error":0,
-           "trace_id":1L,
-           "span_id":1L,
-           "parent_id":0L,
-           "start":1000L,
-           "duration":10L,
-           "meta": [:],
-           "metrics":[:]
-         ])
-       ])]
-      ])
+      "events"  : [new TreeMap<>([
+        "type"   : "span",
+        "version": 1,
+        "content": new TreeMap<>([
+          "service"  : "my-service",
+          "name"     : "fakeOperation",
+          "resource" : "fakeResource",
+          "error"    : 0,
+          "trace_id" : 1L,
+          "span_id"  : 1L,
+          "parent_id": 0L,
+          "start"    : 1000L,
+          "duration" : 10L,
+          "meta"     : [:],
+          "metrics"  : [:]
+        ])
+      ])]
+    ])
     // spotless:on
     ignore = traces.each {
       it.each {
@@ -195,7 +230,7 @@ class DDIntakeApiTest extends DDCoreSpecification {
     Traces traceCapture = new Traces()
     def packer = new MsgPackWriter(new FlushingBuffer(1 << 20, traceCapture))
     def mapper = discoverMapper(trackType)
-    for(trace in traces) {
+    for (trace in traces) {
       packer.format(trace, mapper)
     }
     packer.flush()
@@ -208,9 +243,9 @@ class DDIntakeApiTest extends DDCoreSpecification {
     def tracer = tracerBuilder().writer(new ListWriter()).build()
 
     def context = new DDSpanContext(
-      DDId.from(1),
-      DDId.from(1),
-      DDId.ZERO,
+      DDTraceId.ONE,
+      1,
+      DDSpanId.ZERO,
       null,
       "fakeService",
       "fakeOperation",
@@ -221,7 +256,7 @@ class DDIntakeApiTest extends DDCoreSpecification {
       false,
       "fakeType",
       0,
-      tracer.pendingTraceFactory.create(DDId.from(1)),
+      tracer.pendingTraceFactory.create(DDTraceId.ONE),
       null,
       null,
       AgentTracer.NoopPathwayContext.INSTANCE,

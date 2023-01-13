@@ -1,12 +1,19 @@
 package com.datadog.debugger.agent;
 
+import com.datadog.debugger.el.ProbeCondition;
 import com.datadog.debugger.instrumentation.InstrumentationResult;
+import com.datadog.debugger.probe.LogProbe;
+import com.datadog.debugger.probe.MetricProbe;
+import com.datadog.debugger.probe.ProbeDefinition;
+import com.datadog.debugger.probe.SpanProbe;
+import com.datadog.debugger.probe.Where;
 import com.datadog.debugger.sink.DebuggerSink;
 import com.datadog.debugger.util.ExceptionHelper;
 import datadog.trace.api.Config;
 import datadog.trace.bootstrap.debugger.DebuggerContext;
 import datadog.trace.bootstrap.debugger.ProbeRateLimiter;
 import datadog.trace.bootstrap.debugger.Snapshot;
+import datadog.trace.bootstrap.debugger.SummaryBuilder;
 import datadog.trace.util.TagsHelper;
 import java.lang.instrument.Instrumentation;
 import java.util.ArrayList;
@@ -17,6 +24,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,10 +34,12 @@ import org.slf4j.LoggerFactory;
  * Handles configuration updates if required by installing a new ClassFileTransformer and triggering
  * re-transformation of required classes
  */
-public class ConfigurationUpdater implements DebuggerContext.ProbeResolver {
+public class ConfigurationUpdater
+    implements DebuggerContext.ProbeResolver, DebuggerProductChangesListener.ConfigurationAcceptor {
 
-  public static final int MAX_ALLOWED_PROBES = 100;
   public static final int MAX_ALLOWED_METRIC_PROBES = 100;
+  public static final int MAX_ALLOWED_LOG_PROBES = 100;
+  private static final int MAX_ALLOWED_SPAN_PROBES = 100;
 
   public interface TransformerSupplier {
     DebuggerTransformer supply(
@@ -80,19 +91,9 @@ public class ConfigurationUpdater implements DebuggerContext.ProbeResolver {
         applyNewConfiguration(createEmptyConfiguration());
         return;
       }
-
-      // handle mismatched configurations
-      if (!configuration.getId().equals(serviceName)) {
-        log.debug(
-            "got debugConfig.serviceName = {}, ignoring configuration", configuration.getId());
-        return;
-      }
-
       // apply new configuration
       Configuration newConfiguration = applyConfigurationFilters(configuration);
       applyNewConfiguration(newConfiguration);
-      return;
-
     } catch (RuntimeException e) {
       ExceptionHelper.logException(log, e, "Error during accepting new debugger configuration:");
       throw e;
@@ -102,9 +103,7 @@ public class ConfigurationUpdater implements DebuggerContext.ProbeResolver {
   private void applyNewConfiguration(Configuration newConfiguration) {
     ConfigurationComparer changes =
         new ConfigurationComparer(currentConfiguration, newConfiguration, instrumentationResults);
-
     currentConfiguration = newConfiguration;
-
     if (changes.hasProbeRelatedChanges()) {
       log.info("Applying new probe configuration, changes: {}", changes);
       handleProbesChanges(changes);
@@ -115,44 +114,40 @@ public class ConfigurationUpdater implements DebuggerContext.ProbeResolver {
   }
 
   private Configuration applyConfigurationFilters(Configuration configuration) {
-    Configuration newConfiguration = configuration;
-
-    Collection<SnapshotProbe> probes = configuration.getSnapshotProbes();
-
-    if (probes != null) {
-      probes =
-          probes.stream()
-              .filter(SnapshotProbe::isActive)
-              .filter(envAndVersionCheck::isEnvAndVersionMatch)
-              .limit(MAX_ALLOWED_PROBES)
-              .collect(Collectors.toList());
-      probes = mergeDuplicatedProbes(probes);
-    }
-
-    Collection<MetricProbe> metricProbes = configuration.getMetricProbes();
-
-    if (metricProbes != null) {
-      metricProbes =
-          metricProbes.stream()
-              .filter(MetricProbe::isActive)
-              .filter(envAndVersionCheck::isEnvAndVersionMatch)
-              .limit(MAX_ALLOWED_METRIC_PROBES)
-              .collect(Collectors.toList());
-    }
-
+    Collection<MetricProbe> metricProbes =
+        filterProbes(
+            configuration::getMetricProbes, MetricProbe::isActive, MAX_ALLOWED_METRIC_PROBES);
+    Collection<LogProbe> logProbes =
+        filterProbes(configuration::getLogProbes, LogProbe::isActive, MAX_ALLOWED_LOG_PROBES);
+    logProbes = mergeDuplicatedProbes(logProbes);
+    Collection<SpanProbe> spanProbes =
+        filterProbes(configuration::getSpanProbes, SpanProbe::isActive, MAX_ALLOWED_SPAN_PROBES);
     return new Configuration(
-        configuration.getId(),
-        configuration.getOrgId(),
-        probes,
+        serviceName,
         metricProbes,
+        logProbes,
+        spanProbes,
         configuration.getAllowList(),
         configuration.getDenyList(),
         configuration.getSampling());
   }
 
-  Collection<SnapshotProbe> mergeDuplicatedProbes(Collection<SnapshotProbe> probes) {
-    Map<Where, SnapshotProbe> mergedProbes = new HashMap<>();
-    for (SnapshotProbe probe : probes) {
+  private <E extends ProbeDefinition> Collection<E> filterProbes(
+      Supplier<Collection<E>> probeSupplier, Predicate<E> isActive, int maxAllowedProbes) {
+    Collection<E> probes = probeSupplier.get();
+    if (probes == null) {
+      return Collections.emptyList();
+    }
+    return probes.stream()
+        .filter(isActive)
+        .filter(envAndVersionCheck::isEnvAndVersionMatch)
+        .limit(maxAllowedProbes)
+        .collect(Collectors.toList());
+  }
+
+  Collection<LogProbe> mergeDuplicatedProbes(Collection<LogProbe> probes) {
+    Map<Where, LogProbe> mergedProbes = new HashMap<>();
+    for (LogProbe probe : probes) {
       ProbeDefinition existingProbe = mergedProbes.putIfAbsent(probe.getWhere(), probe);
       if (existingProbe != null) {
         existingProbe.addAdditionalProbe(probe);
@@ -166,13 +161,12 @@ public class ConfigurationUpdater implements DebuggerContext.ProbeResolver {
     storeDebuggerDefinitions(changes);
     installNewDefinitions();
     reportReceived(changes);
-
-    if (!changes.hasChangedClasses()) return;
-
+    if (!changes.hasChangedClasses()) {
+      return;
+    }
     List<Class<?>> changedClasses =
         changes.getAllLoadedChangedClasses(instrumentation.getAllLoadedClasses());
     retransformClasses(changedClasses);
-
     // ensures that we have at least re-transformed 1 class
     if (changedClasses.size() > 0) {
       log.debug("Re-transformation done");
@@ -213,16 +207,14 @@ public class ConfigurationUpdater implements DebuggerContext.ProbeResolver {
 
   private Configuration createEmptyConfiguration() {
     if (currentConfiguration != null) {
-      return new Configuration(
-          currentConfiguration.getId(),
-          currentConfiguration.getOrgId(),
-          null,
-          null,
-          currentConfiguration.getAllowList(),
-          currentConfiguration.getDenyList(),
-          currentConfiguration.getSampling());
+      return Configuration.builder()
+          .setService(currentConfiguration.getService())
+          .addAllowList(currentConfiguration.getAllowList())
+          .addDenyList(currentConfiguration.getDenyList())
+          .setSampling(currentConfiguration.getSampling())
+          .build();
     }
-    return new Configuration("ID", 0, null, null, null, null, null);
+    return Configuration.builder().setService(serviceName).build();
   }
 
   private void retransformClasses(List<Class<?>> classesToBeTransformed) {
@@ -257,61 +249,64 @@ public class ConfigurationUpdater implements DebuggerContext.ProbeResolver {
       retransformClasses(Collections.singletonList(callingClass));
       return null;
     }
-    if (!(definition instanceof SnapshotProbe)) {
-      log.warn("Definition id={} is not a Probe", definition.getId());
-      return null;
-    }
     String type = definition.getWhere().getTypeName();
     String method = definition.getWhere().getMethodName();
     String file = definition.getWhere().getSourceFile();
     String[] probeLines = definition.getWhere().getLines();
-
     InstrumentationResult result = instrumentationResults.get(definition.getId());
-
     if (result != null) {
       type = result.getTypeName();
       method = result.getMethodName();
     }
-
     List<String> lines = probeLines != null ? Arrays.asList(probeLines) : null;
-    return convertToProbeDetails(
-        (SnapshotProbe) definition, new Snapshot.ProbeLocation(type, method, file, lines));
+    return convertToProbeDetails(definition, new Snapshot.ProbeLocation(type, method, file, lines));
   }
 
   private Snapshot.ProbeDetails convertToProbeDetails(
-      SnapshotProbe probe, Snapshot.ProbeLocation location) {
+      ProbeDefinition probe, Snapshot.ProbeLocation location) {
+    SummaryBuilder summaryBuilder;
+    ProbeCondition probeCondition;
+    if (probe instanceof LogProbe) {
+      summaryBuilder = new LogMessageTemplateSummaryBuilder((LogProbe) probe);
+      probeCondition = null;
+    } else {
+      log.warn("definition id={} has unsupported probe type: {}", probe.getId(), probe.getClass());
+      return null;
+    }
     return new Snapshot.ProbeDetails(
-        probe.id,
+        probe.getId(),
         location,
-        probe.getProbeCondition(),
+        ProbeDefinition.MethodLocation.convert(probe.getEvaluateAt()),
+        probeCondition,
         probe.concatTags(),
+        summaryBuilder,
         probe.getAdditionalProbes().stream()
-            .map(relatedProbe -> convertToProbeDetails(((SnapshotProbe) relatedProbe), location))
+            .map(relatedProbe -> convertToProbeDetails(relatedProbe, location))
             .collect(Collectors.toList()));
   }
 
   private void applyRateLimiter(ConfigurationComparer changes) {
-    Collection<SnapshotProbe> probes = currentConfiguration.getSnapshotProbes();
+    Collection<LogProbe> probes = currentConfiguration.getLogProbes();
     if (probes == null) {
       return;
     }
     // ensure rate is up-to-date for all new probes
     for (ProbeDefinition addedDefinitions : changes.getAddedDefinitions()) {
-      if (addedDefinitions instanceof SnapshotProbe) {
-        SnapshotProbe probe = (SnapshotProbe) addedDefinitions;
-        SnapshotProbe.Sampling sampling = probe.getSampling();
+      if (addedDefinitions instanceof LogProbe) {
+        LogProbe probe = (LogProbe) addedDefinitions;
+        LogProbe.Sampling sampling = probe.getSampling();
         ProbeRateLimiter.setRate(
             probe.getId(), sampling != null ? sampling.getSnapshotsPerSecond() : 1.0);
       }
     }
     // remove rate for all removed probes
     for (ProbeDefinition removedDefinition : changes.getRemovedDefinitions()) {
-      if (removedDefinition instanceof SnapshotProbe) {
+      if (removedDefinition instanceof LogProbe) {
         ProbeRateLimiter.resetRate(removedDefinition.getId());
       }
     }
     // set global sampling
-    SnapshotProbe.Sampling sampling = currentConfiguration.getSampling();
+    LogProbe.Sampling sampling = currentConfiguration.getSampling();
     if (sampling != null) {
       ProbeRateLimiter.setGlobalRate(sampling.getSnapshotsPerSecond());
     }

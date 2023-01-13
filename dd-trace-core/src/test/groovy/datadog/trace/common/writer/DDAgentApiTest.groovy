@@ -3,12 +3,13 @@ package datadog.trace.common.writer
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import datadog.communication.monitor.Monitoring
-import datadog.trace.api.DDId
+import datadog.trace.api.DDSpanId
+import datadog.trace.api.DDTraceId
 import datadog.trace.api.StatsDClient
 import datadog.trace.api.sampling.PrioritySampling
 import datadog.trace.bootstrap.instrumentation.api.AgentTracer.NoopPathwayContext
 import datadog.trace.bootstrap.instrumentation.api.InstrumentationTags
-import datadog.trace.common.sampling.RateByServiceSampler
+import datadog.trace.common.sampling.RateByServiceTraceSampler
 import datadog.trace.common.writer.ddagent.DDAgentApi
 import datadog.communication.ddagent.DDAgentFeaturesDiscovery
 
@@ -142,10 +143,10 @@ class DDAgentApiTest extends DDCoreSpecification {
       "error"    : 0,
       "meta"     : ["thread.name": Thread.currentThread().getName(), "_dd.p.usr": "123", "_dd.p.dm": "-1"],
       "metrics"  : [
-        (DDSpanContext.PRIORITY_SAMPLING_KEY)       : 1,
-        (InstrumentationTags.DD_TOP_LEVEL as String): 1,
-        (RateByServiceSampler.SAMPLING_AGENT_RATE)  : 1.0,
-        "thread.id"                                 : Thread.currentThread().id
+        (DDSpanContext.PRIORITY_SAMPLING_KEY)          : 1,
+        (InstrumentationTags.DD_TOP_LEVEL as String)   : 1,
+        (RateByServiceTraceSampler.SAMPLING_AGENT_RATE): 1.0,
+        "thread.id"                                    : Thread.currentThread().id
       ],
       "name"     : "fakeOperation",
       "parent_id": 0,
@@ -162,10 +163,10 @@ class DDAgentApiTest extends DDCoreSpecification {
       "error"    : 0,
       "meta"     : ["thread.name": Thread.currentThread().getName(), "_dd.p.usr": "123", "_dd.p.dm": "-1"],
       "metrics"  : [
-        (DDSpanContext.PRIORITY_SAMPLING_KEY)       : 1,
-        (InstrumentationTags.DD_TOP_LEVEL as String): 1,
-        (RateByServiceSampler.SAMPLING_AGENT_RATE)  : 1.0,
-        "thread.id"                                 : Thread.currentThread().id
+        (DDSpanContext.PRIORITY_SAMPLING_KEY)          : 1,
+        (InstrumentationTags.DD_TOP_LEVEL as String)   : 1,
+        (RateByServiceTraceSampler.SAMPLING_AGENT_RATE): 1.0,
+        "thread.id"                                    : Thread.currentThread().id
       ],
       "name"     : "fakeOperation",
       "parent_id": 0,
@@ -425,9 +426,9 @@ class DDAgentApiTest extends DDCoreSpecification {
   DDSpan buildSpan(long timestamp, String tag, String value, DatadogTags datadogTags) {
     def tracer = tracerBuilder().writer(new ListWriter()).build()
     def context = new DDSpanContext(
-      DDId.from(1),
-      DDId.from(1),
-      DDId.ZERO,
+      DDTraceId.ONE,
+      1,
+      DDSpanId.ZERO,
       null,
       "fakeService",
       "fakeOperation",
@@ -438,7 +439,7 @@ class DDAgentApiTest extends DDCoreSpecification {
       false,
       "fakeType",
       0,
-      tracer.pendingTraceFactory.create(DDId.from(1)),
+      tracer.pendingTraceFactory.create(DDTraceId.ONE),
       null,
       null,
       NoopPathwayContext.INSTANCE,

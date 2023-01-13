@@ -1,6 +1,9 @@
 package com.datadog.debugger.agent;
 
 import com.datadog.debugger.instrumentation.InstrumentationResult;
+import com.datadog.debugger.probe.LogProbe;
+import com.datadog.debugger.probe.ProbeDefinition;
+import com.datadog.debugger.probe.Where;
 import com.datadog.debugger.util.ExceptionHelper;
 import datadog.trace.agent.tooling.AgentStrategies;
 import datadog.trace.api.Config;
@@ -45,8 +48,8 @@ import org.slf4j.LoggerFactory;
  */
 public class DebuggerTransformer implements ClassFileTransformer {
   private static final Logger log = LoggerFactory.getLogger(DebuggerTransformer.class);
-  private static final String CANNOT_FIND_METHOD = "Cannot find %s::%s";
-  private static final String CANNOT_FIND_LINE = "Cannot find %s:L%s";
+  private static final String CANNOT_FIND_METHOD = "Cannot find method %s::%s";
+  private static final String CANNOT_FIND_LINE = "No executable code was found at %s:L%s";
 
   private final Config config;
   private final TransformerDefinitionMatcher definitonMatcher;
@@ -191,8 +194,8 @@ public class DebuggerTransformer implements ClassFileTransformer {
       Set<String> methodNames = new HashSet<>();
       for (MethodNode methodNode : classNode.methods) {
         if (methodNames.add(methodNode.name)) {
-          SnapshotProbe probe =
-              SnapshotProbe.builder()
+          LogProbe probe =
+              LogProbe.builder()
                   .probeId(UUID.randomUUID().toString())
                   .where(classNode.name, methodNode.name)
                   .build();
@@ -435,11 +438,12 @@ public class DebuggerTransformer implements ClassFileTransformer {
   }
 
   private MethodNode matchSourceFile(ClassNode classNode, ProbeDefinition definition) {
-    String[] lines = definition.getWhere().getLines();
+    Where.SourceLine[] lines = definition.getWhere().getSourceLines();
     if (lines == null || lines.length == 0) {
       return null;
     }
-    int matchingLine = Integer.parseInt(lines[0]);
+    Where.SourceLine sourceLine = lines[0]; // assume only 1 range
+    int matchingLine = sourceLine.getFrom();
     for (MethodNode methodNode : classNode.methods) {
       AbstractInsnNode currentInsn = methodNode.instructions.getFirst();
       while (currentInsn != null) {

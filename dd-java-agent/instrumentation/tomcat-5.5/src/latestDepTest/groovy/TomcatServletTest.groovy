@@ -99,10 +99,20 @@ class TomcatServletTest extends AbstractServletTest<Tomcat, Context> {
   }
 
   @Override
+  boolean testRequestBody() {
+    true
+  }
+
+  @Override
+  boolean testRequestBodyISVariant() {
+    true
+  }
+
+  @Override
   Map<String, Serializable> expectedExtraErrorInformation(ServerEndpoint endpoint) {
     if (endpoint.throwsException) {
       // Exception classes get wrapped in ServletException
-      ["error.msg": { endpoint == EXCEPTION ? "Servlet execution threw an exception" : it == endpoint.body },
+      ["error.message": { endpoint == EXCEPTION ? "Servlet execution threw an exception" : it == endpoint.body },
         "error.type": { it == ServletException.name || it == InputMismatchException.name },
         "error.stack": String]
     } else {
@@ -144,6 +154,7 @@ class TomcatServletTest extends AbstractServletTest<Tomcat, Context> {
     Wrapper wrapper = servletContext.createWrapper()
     wrapper.name = UUID.randomUUID()
     wrapper.servletClass = servlet.name
+    wrapper.asyncSupported =true
     servletContext.addChild(wrapper)
     servletContext.addServletMappingDecoded(path, wrapper.name)
   }

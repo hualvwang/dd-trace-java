@@ -13,9 +13,10 @@ import static datadog.trace.instrumentation.netty41.client.NettyHttpClientDecora
 import static datadog.trace.instrumentation.netty41.client.NettyResponseInjectAdapter.SETTER;
 
 import datadog.trace.api.Config;
-import datadog.trace.api.PropagationStyle;
+import datadog.trace.api.TracePropagationStyle;
 import datadog.trace.bootstrap.instrumentation.api.AgentScope;
 import datadog.trace.bootstrap.instrumentation.api.AgentSpan;
+import datadog.trace.bootstrap.instrumentation.decorator.HttpClientDecorator;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
@@ -70,8 +71,11 @@ public class HttpClientRequestTracingHandler extends ChannelOutboundHandlerAdapt
       // AWS calls are often signed, so we can't add headers without breaking the signature.
       if (!request.headers().contains("amz-sdk-invocation-id")) {
         propagate().inject(span, request.headers(), SETTER);
+        propagate()
+            .injectPathwayContext(
+                span, request.headers(), SETTER, HttpClientDecorator.CLIENT_PATHWAY_EDGE_TAGS);
       } else if (Config.get().isAwsPropagationEnabled()) {
-        propagate().inject(span, request.headers(), SETTER, PropagationStyle.XRAY);
+        propagate().inject(span, request.headers(), SETTER, TracePropagationStyle.XRAY);
       }
 
       ctx.channel().attr(SPAN_ATTRIBUTE_KEY).set(span);

@@ -3,7 +3,7 @@ import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 plugins {
   java
   groovy
-  id("com.diffplug.spotless") version "5.11.0"
+  id("com.diffplug.spotless") version "6.11.0"
   id("com.github.johnrengelman.shadow") version "7.1.2"
 }
 
@@ -19,7 +19,8 @@ spotless {
     target("src/**/*.java")
     // ignore embedded test projects
     targetExclude("src/test/resources/**")
-    googleJavaFormat()
+    // This is the last Google Java Format version that supports Java 8
+    googleJavaFormat("1.7")
   }
 }
 

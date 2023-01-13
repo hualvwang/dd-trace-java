@@ -1,10 +1,13 @@
 package datadog.telemetry;
 
+import com.squareup.moshi.FromJson;
 import com.squareup.moshi.JsonAdapter;
+import com.squareup.moshi.JsonReader;
+import com.squareup.moshi.JsonWriter;
 import com.squareup.moshi.Moshi;
+import com.squareup.moshi.ToJson;
 import datadog.common.container.ContainerInfo;
 import datadog.communication.ddagent.TracerVersion;
-import datadog.communication.http.SafeRequestBuilder;
 import datadog.telemetry.api.ApiVersion;
 import datadog.telemetry.api.Application;
 import datadog.telemetry.api.Host;
@@ -13,7 +16,9 @@ import datadog.telemetry.api.RequestType;
 import datadog.telemetry.api.Telemetry;
 import datadog.trace.api.Config;
 import datadog.trace.api.Platform;
+import java.io.IOException;
 import java.util.concurrent.atomic.AtomicLong;
+import javax.annotation.Nullable;
 import okhttp3.HttpUrl;
 import okhttp3.MediaType;
 import okhttp3.Request;
@@ -33,6 +38,7 @@ public class RequestBuilder {
   private static final JsonAdapter<Telemetry> JSON_ADAPTER =
       new Moshi.Builder()
           .add(new PolymorphicAdapterFactory(Payload.class))
+          .add(new NumberJsonAdapter())
           .build()
           .adapter(Telemetry.class);
   private static final AtomicLong SEQ_ID = new AtomicLong();
@@ -91,12 +97,25 @@ public class RequestBuilder {
     String json = JSON_ADAPTER.toJson(telemetry);
     RequestBody body = RequestBody.create(JSON, json);
 
-    return new SafeRequestBuilder()
+    return new Request.Builder()
         .url(httpUrl)
         .addHeader("Content-Type", JSON.toString())
         .addHeader("DD-Telemetry-API-Version", API_VERSION.toString())
         .addHeader("DD-Telemetry-Request-Type", requestType.toString())
         .post(body)
         .build();
+  }
+
+  private static final class NumberJsonAdapter {
+    @Nullable
+    @FromJson
+    public Number fromJson(JsonReader reader) throws IOException {
+      throw new UnsupportedOperationException();
+    }
+
+    @ToJson
+    public void toJson(JsonWriter writer, @Nullable Number value) throws IOException {
+      writer.value(value);
+    }
   }
 }

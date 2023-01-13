@@ -289,6 +289,7 @@ class MuzzlePlugin implements Plugin<Project> {
 
     return filterAndLimitVersions(allRangeResult, muzzleDirective.skipVersions).collect { version ->
       final MuzzleDirective inverseDirective = new MuzzleDirective()
+      inverseDirective.name = muzzleDirective.name
       inverseDirective.group = muzzleDirective.group
       inverseDirective.module = muzzleDirective.module
       inverseDirective.versions = "$version"
@@ -373,6 +374,7 @@ class MuzzlePlugin implements Plugin<Project> {
     }
 
     def muzzleTask = instrumentationProject.task(taskName) {
+      it.group = 'Muzzle'
       doLast {
         final ClassLoader instrumentationCL = createInstrumentationClassloader(instrumentationProject, toolingProject)
         def ccl = Thread.currentThread().contextClassLoader

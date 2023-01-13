@@ -4,7 +4,8 @@ import datadog.communication.http.OkHttpUtils
 import datadog.communication.serialization.ByteBufferConsumer
 import datadog.communication.serialization.FlushingBuffer
 import datadog.communication.serialization.msgpack.MsgPackWriter
-import datadog.trace.api.DDId
+import datadog.trace.api.DDSpanId
+import datadog.trace.api.DDTraceId
 import datadog.trace.api.StatsDClient
 import datadog.trace.api.WellKnownTags
 import datadog.trace.api.intake.TrackType
@@ -18,6 +19,7 @@ import datadog.trace.core.DDSpanContext
 import datadog.trace.core.PendingTrace
 import datadog.trace.core.monitor.HealthMetrics
 import datadog.trace.core.monitor.MonitoringImpl
+import datadog.trace.core.monitor.TracerHealthMetrics
 import datadog.trace.core.propagation.DatadogTags
 import datadog.trace.core.test.DDCoreSpecification
 import okhttp3.HttpUrl
@@ -699,7 +701,7 @@ class DDIntakeWriterCombinedTest extends DDCoreSpecification {
       numErrors.incrementAndGet()
     }
 
-    def healthMetrics = new HealthMetrics(statsd)
+    def healthMetrics = new TracerHealthMetrics(statsd)
     def writer = DDIntakeWriter.builder()
       .intakeApi(api)
       .trackType(trackType)
@@ -732,9 +734,9 @@ class DDIntakeWriterCombinedTest extends DDCoreSpecification {
     def trace = Mock(PendingTrace)
     trace.getTracer() >> tracer
     return new DDSpanContext(
-      DDId.from(1),
-      DDId.from(1),
-      DDId.ZERO,
+      DDTraceId.ONE,
+      1,
+      DDSpanId.ZERO,
       "",
       "",
       "",

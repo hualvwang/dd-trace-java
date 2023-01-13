@@ -4,6 +4,7 @@ import datadog.trace.api.env.FixedCapturedEnvironment
 import datadog.trace.bootstrap.config.provider.ConfigConverter
 import datadog.trace.bootstrap.config.provider.ConfigProvider
 import datadog.trace.test.util.DDSpecification
+import datadog.trace.util.throwable.FatalAgentMisconfigurationError
 import org.junit.Rule
 import spock.lang.Unroll
 
@@ -17,8 +18,8 @@ import static datadog.trace.api.DDTags.RUNTIME_ID_TAG
 import static datadog.trace.api.DDTags.RUNTIME_VERSION_TAG
 import static datadog.trace.api.DDTags.SERVICE
 import static datadog.trace.api.DDTags.SERVICE_TAG
-import static datadog.trace.api.IdGenerationStrategy.RANDOM
-import static datadog.trace.api.IdGenerationStrategy.SEQUENTIAL
+import static datadog.trace.api.config.CiVisibilityConfig.CIVISIBILITY_AGENTLESS_ENABLED
+import static datadog.trace.api.config.CiVisibilityConfig.CIVISIBILITY_ENABLED
 import static datadog.trace.api.config.DebuggerConfig.DEBUGGER_CLASSFILE_DUMP_ENABLED
 import static datadog.trace.api.config.DebuggerConfig.DEBUGGER_DIAGNOSTICS_INTERVAL
 import static datadog.trace.api.config.DebuggerConfig.DEBUGGER_ENABLED
@@ -84,6 +85,7 @@ import static datadog.trace.api.config.TraceInstrumentationConfig.TRACE_ENABLED
 import static datadog.trace.api.config.TracerConfig.AGENT_HOST
 import static datadog.trace.api.config.TracerConfig.AGENT_PORT_LEGACY
 import static datadog.trace.api.config.TracerConfig.AGENT_UNIX_DOMAIN_SOCKET
+import static datadog.trace.api.config.TracerConfig.BAGGAGE_MAPPING
 import static datadog.trace.api.config.TracerConfig.HEADER_TAGS
 import static datadog.trace.api.config.TracerConfig.HTTP_CLIENT_ERROR_STATUSES
 import static datadog.trace.api.config.TracerConfig.HTTP_SERVER_ERROR_STATUSES
@@ -106,8 +108,9 @@ import static datadog.trace.api.config.TracerConfig.TRACE_RESOLVER_ENABLED
 import static datadog.trace.api.config.TracerConfig.TRACE_SAMPLE_RATE
 import static datadog.trace.api.config.TracerConfig.TRACE_SAMPLING_OPERATION_RULES
 import static datadog.trace.api.config.TracerConfig.TRACE_SAMPLING_SERVICE_RULES
-import static datadog.trace.api.config.TracerConfig.WRITER_TYPE
 import static datadog.trace.api.config.TracerConfig.TRACE_X_DATADOG_TAGS_MAX_LENGTH
+import static datadog.trace.api.config.TracerConfig.WRITER_TYPE
+import static datadog.trace.api.TracePropagationStyle.*
 
 class ConfigTest extends DDSpecification {
 
@@ -163,6 +166,7 @@ class ConfigTest extends DDSpecification {
     prop.setProperty(SPAN_TAGS, "c:3")
     prop.setProperty(JMX_TAGS, "d:4")
     prop.setProperty(HEADER_TAGS, "e:five")
+    prop.setProperty(BAGGAGE_MAPPING, "f:six")
     prop.setProperty(HTTP_SERVER_ERROR_STATUSES, "123-456,457,124-125,122")
     prop.setProperty(HTTP_CLIENT_ERROR_STATUSES, "111")
     prop.setProperty(HTTP_CLIENT_HOST_SPLIT_BY_DOMAIN, "true")
@@ -233,7 +237,7 @@ class ConfigTest extends DDSpecification {
     config.apiKey == "new api key" // we can still override via internal properties object
     config.site == "new site"
     config.serviceName == "something else"
-    config.idGenerationStrategy == SEQUENTIAL
+    config.idGenerationStrategy.class.name.endsWith('$Sequential')
     config.traceEnabled == false
     config.writerType == "LoggingWriter"
     config.agentHost == "somehost"
@@ -246,6 +250,7 @@ class ConfigTest extends DDSpecification {
     config.mergedSpanTags == [b: "2", c: "3"]
     config.mergedJmxTags == [b: "2", d: "4", (RUNTIME_ID_TAG): config.getRuntimeId(), (SERVICE_TAG): config.serviceName]
     config.requestHeaderTags == [e: "five"]
+    config.baggageMapping == [f: "six"]
     config.httpServerErrorStatuses == toBitSet((122..457))
     config.httpClientErrorStatuses == toBitSet((111..111))
     config.httpClientSplitByDomain == true
@@ -254,9 +259,10 @@ class ConfigTest extends DDSpecification {
     config.splitByTags == ["some.tag1", "some.tag2"].toSet()
     config.partialFlushMinSpans == 15
     config.reportHostName == true
-    config.runtimeContextFieldInjection == false
     config.propagationStylesToExtract.toList() == [PropagationStyle.DATADOG, PropagationStyle.B3]
     config.propagationStylesToInject.toList() == [PropagationStyle.B3, PropagationStyle.DATADOG]
+    config.tracePropagationStylesToExtract.toList() == [DATADOG, B3, B3MULTI]
+    config.tracePropagationStylesToInject.toList() == [B3, B3MULTI, DATADOG]
     config.jmxFetchEnabled == false
     config.jmxFetchMetricsConfigs == ["/foo.yaml", "/bar.yaml"]
     config.jmxFetchCheckPeriod == 100
@@ -274,7 +280,7 @@ class ConfigTest extends DDSpecification {
 
     config.profilingEnabled == true
     config.profilingUrl == "new url"
-    config.mergedProfilingTags == [b: "2", f: "6", (HOST_TAG): "test-host", (RUNTIME_ID_TAG): config.getRuntimeId(),  (RUNTIME_VERSION_TAG): config.getRuntimeVersion(), (SERVICE_TAG): config.serviceName, (LANGUAGE_TAG_KEY): LANGUAGE_TAG_VALUE]
+    config.mergedProfilingTags == [b: "2", f: "6", (HOST_TAG): "test-host", (RUNTIME_ID_TAG): config.getRuntimeId(), (RUNTIME_VERSION_TAG): config.getRuntimeVersion(), (SERVICE_TAG): config.serviceName, (LANGUAGE_TAG_KEY): LANGUAGE_TAG_VALUE]
     config.profilingStartDelay == 1111
     config.profilingStartForceFirst == true
     config.profilingUploadPeriod == 1112
@@ -331,6 +337,7 @@ class ConfigTest extends DDSpecification {
     System.setProperty(PREFIX + SPAN_TAGS, "c:3")
     System.setProperty(PREFIX + JMX_TAGS, "d:4")
     System.setProperty(PREFIX + HEADER_TAGS, "e:five")
+    System.setProperty(PREFIX + BAGGAGE_MAPPING, "f:six")
     System.setProperty(PREFIX + HTTP_SERVER_ERROR_STATUSES, "123-456,457,124-125,122")
     System.setProperty(PREFIX + HTTP_CLIENT_ERROR_STATUSES, "111")
     System.setProperty(PREFIX + HTTP_CLIENT_HOST_SPLIT_BY_DOMAIN, "true")
@@ -414,6 +421,7 @@ class ConfigTest extends DDSpecification {
     config.mergedSpanTags == [b: "2", c: "3"]
     config.mergedJmxTags == [b: "2", d: "4", (RUNTIME_ID_TAG): config.getRuntimeId(), (SERVICE_TAG): config.serviceName]
     config.requestHeaderTags == [e: "five"]
+    config.baggageMapping == [f: "six"]
     config.httpServerErrorStatuses == toBitSet((122..457))
     config.httpClientErrorStatuses == toBitSet((111..111))
     config.httpClientSplitByDomain == true
@@ -422,9 +430,10 @@ class ConfigTest extends DDSpecification {
     config.splitByTags == ["some.tag3", "some.tag2", "some.tag1"].toSet()
     config.partialFlushMinSpans == 25
     config.reportHostName == true
-    config.runtimeContextFieldInjection == false
     config.propagationStylesToExtract.toList() == [PropagationStyle.DATADOG, PropagationStyle.B3]
     config.propagationStylesToInject.toList() == [PropagationStyle.B3, PropagationStyle.DATADOG]
+    config.tracePropagationStylesToExtract.toList() == [DATADOG, B3, B3MULTI]
+    config.tracePropagationStylesToInject.toList() == [B3, B3MULTI, DATADOG]
     config.jmxFetchEnabled == false
     config.jmxFetchMetricsConfigs == ["/foo.yaml", "/bar.yaml"]
     config.jmxFetchCheckPeriod == 100
@@ -502,6 +511,8 @@ class ConfigTest extends DDSpecification {
     config.writerType == "LoggingWriter"
     config.propagationStylesToExtract.toList() == [PropagationStyle.B3, PropagationStyle.DATADOG]
     config.propagationStylesToInject.toList() == [PropagationStyle.DATADOG, PropagationStyle.B3]
+    config.tracePropagationStylesToExtract.toList() == [B3, B3MULTI, DATADOG]
+    config.tracePropagationStylesToInject.toList() == [DATADOG, B3, B3MULTI]
     config.jmxFetchMetricsConfigs == ["some/file"]
     config.reportHostName == true
     config.xDatadogTagsMaxLength == 42
@@ -544,6 +555,7 @@ class ConfigTest extends DDSpecification {
     System.setProperty(PREFIX + TRACE_RESOLVER_ENABLED, " ")
     System.setProperty(PREFIX + SERVICE_MAPPING, " ")
     System.setProperty(PREFIX + HEADER_TAGS, "1")
+    System.setProperty(PREFIX + BAGGAGE_MAPPING, "1")
     System.setProperty(PREFIX + SPAN_TAGS, "invalid")
     System.setProperty(PREFIX + HTTP_SERVER_ERROR_STATUSES, "1111")
     System.setProperty(PREFIX + HTTP_CLIENT_ERROR_STATUSES, "1:1")
@@ -567,6 +579,7 @@ class ConfigTest extends DDSpecification {
     config.serviceMapping == [:]
     config.mergedSpanTags == [:]
     config.requestHeaderTags == [:]
+    config.baggageMapping == [:]
     config.httpServerErrorStatuses == toBitSet((500..599))
     config.httpClientErrorStatuses == toBitSet((400..499))
     config.httpClientSplitByDomain == false
@@ -575,6 +588,8 @@ class ConfigTest extends DDSpecification {
     config.splitByTags == [].toSet()
     config.propagationStylesToExtract.toList() == [PropagationStyle.DATADOG]
     config.propagationStylesToInject.toList() == [PropagationStyle.DATADOG]
+    config.tracePropagationStylesToExtract.toList() == [DATADOG]
+    config.tracePropagationStylesToInject.toList() == [DATADOG]
   }
 
   def "sys props and env vars overrides for trace_agent_port and agent_port_legacy as expected"() {
@@ -639,6 +654,7 @@ class ConfigTest extends DDSpecification {
     properties.setProperty(SPAN_TAGS, "c:3")
     properties.setProperty(JMX_TAGS, "d:4")
     properties.setProperty(HEADER_TAGS, "e:five")
+    properties.setProperty(BAGGAGE_MAPPING, "f:six")
     properties.setProperty(HTTP_SERVER_ERROR_STATUSES, "123-456,457,124-125,122")
     properties.setProperty(HTTP_CLIENT_ERROR_STATUSES, "111")
     properties.setProperty(HTTP_CLIENT_HOST_SPLIT_BY_DOMAIN, "true")
@@ -670,6 +686,7 @@ class ConfigTest extends DDSpecification {
     config.mergedSpanTags == [b: "2", c: "3"]
     config.mergedJmxTags == [b: "2", d: "4", (RUNTIME_ID_TAG): config.getRuntimeId(), (SERVICE_TAG): config.serviceName]
     config.requestHeaderTags == [e: "five"]
+    config.baggageMapping == [f: "six"]
     config.httpServerErrorStatuses == toBitSet((122..457))
     config.httpClientErrorStatuses == toBitSet((111..111))
     config.httpClientSplitByDomain == true
@@ -679,6 +696,8 @@ class ConfigTest extends DDSpecification {
     config.partialFlushMinSpans == 15
     config.propagationStylesToExtract.toList() == [PropagationStyle.B3, PropagationStyle.DATADOG]
     config.propagationStylesToInject.toList() == [PropagationStyle.DATADOG, PropagationStyle.B3]
+    config.tracePropagationStylesToExtract.toList() == [B3, B3MULTI, DATADOG]
+    config.tracePropagationStylesToInject.toList() == [DATADOG, B3, B3MULTI]
     config.jmxFetchMetricsConfigs == ["/foo.yaml", "/bar.yaml"]
     config.jmxFetchCheckPeriod == 100
     config.jmxFetchRefreshBeansPeriod == 200
@@ -777,42 +796,6 @@ class ConfigTest extends DDSpecification {
 
     then:
     config.serviceName == "what actually wants"
-  }
-
-  def "verify integration config"() {
-    setup:
-    environmentVariables.set("DD_INTEGRATION_ORDER_ENABLED", "false")
-    environmentVariables.set("DD_INTEGRATION_TEST_ENV_ENABLED", "true")
-    environmentVariables.set("DD_INTEGRATION_DISABLED_ENV_ENABLED", "false")
-
-    System.setProperty("dd.integration.order.enabled", "true")
-    System.setProperty("dd.integration.test-prop.enabled", "true")
-    System.setProperty("dd.integration.disabled-prop.enabled", "false")
-
-    expect:
-    Config.get().isIntegrationEnabled(integrationNames, defaultEnabled) == expected
-
-    where:
-    // spotless:off
-    names                          | defaultEnabled | expected
-    []                             | true           | true
-    []                             | false          | false
-    ["invalid"]                    | true           | true
-    ["invalid"]                    | false          | false
-    ["test-prop"]                  | false          | true
-    ["test-env"]                   | false          | true
-    ["disabled-prop"]              | true           | false
-    ["disabled-env"]               | true           | false
-    ["other", "test-prop"]         | false          | true
-    ["other", "test-env"]          | false          | true
-    ["order"]                      | false          | true
-    ["test-prop", "disabled-prop"] | false          | true
-    ["disabled-env", "test-env"]   | false          | true
-    ["test-prop", "disabled-prop"] | true           | false
-    ["disabled-env", "test-env"]   | true           | false
-    // spotless:on
-
-    integrationNames = new TreeSet<>(names)
   }
 
   def "verify rule config #name"() {
@@ -1970,7 +1953,7 @@ class ConfigTest extends DDSpecification {
     Config config = Config.get(prop)
 
     then:
-    config.idGenerationStrategy == RANDOM
+    config.idGenerationStrategy.class.name.endsWith('$Random')
   }
 
   def "DD_RUNTIME_METRICS_ENABLED=false disables all metrics"() {
@@ -2050,52 +2033,107 @@ class ConfigTest extends DDSpecification {
     def config = new Config()
 
     then:
-    config.getAppSecEnabledConfig() == res
+    config.getAppSecActivation() == res
 
     where:
     sys        | env        | res
-    null       | null       | ProductActivationConfig.ENABLED_INACTIVE
-    null       | ""         | ProductActivationConfig.ENABLED_INACTIVE
-    null       | "inactive" | ProductActivationConfig.ENABLED_INACTIVE
-    null       | "false"    | ProductActivationConfig.FULLY_DISABLED
-    null       | "0"        | ProductActivationConfig.FULLY_DISABLED
-    null       | "invalid"  | ProductActivationConfig.FULLY_DISABLED
-    null       | "true"     | ProductActivationConfig.FULLY_ENABLED
-    null       | "1"        | ProductActivationConfig.FULLY_ENABLED
-    ""         | null       | ProductActivationConfig.ENABLED_INACTIVE
-    ""         | ""         | ProductActivationConfig.ENABLED_INACTIVE
-    ""         | "inactive" | ProductActivationConfig.ENABLED_INACTIVE
-    ""         | "false"    | ProductActivationConfig.FULLY_DISABLED
-    ""         | "0"        | ProductActivationConfig.FULLY_DISABLED
-    ""         | "invalid"  | ProductActivationConfig.FULLY_DISABLED
-    ""         | "true"     | ProductActivationConfig.FULLY_ENABLED
-    ""         | "1"        | ProductActivationConfig.FULLY_ENABLED
-    "inactive" | null       | ProductActivationConfig.ENABLED_INACTIVE
-    "inactive" | ""         | ProductActivationConfig.ENABLED_INACTIVE
-    "inactive" | "inactive" | ProductActivationConfig.ENABLED_INACTIVE
-    "inactive" | "false"    | ProductActivationConfig.ENABLED_INACTIVE
-    "inactive" | "0"        | ProductActivationConfig.ENABLED_INACTIVE
-    "inactive" | "invalid"  | ProductActivationConfig.ENABLED_INACTIVE
-    "inactive" | "true"     | ProductActivationConfig.ENABLED_INACTIVE
-    "inactive" | "1"        | ProductActivationConfig.ENABLED_INACTIVE
-    "false"    | null       | ProductActivationConfig.FULLY_DISABLED
-    "false"    | ""         | ProductActivationConfig.FULLY_DISABLED
-    "false"    | "inactive" | ProductActivationConfig.FULLY_DISABLED
-    "false"    | "false"    | ProductActivationConfig.FULLY_DISABLED
-    "false"    | "0"        | ProductActivationConfig.FULLY_DISABLED
-    "false"    | "invalid"  | ProductActivationConfig.FULLY_DISABLED
-    "false"    | "true"     | ProductActivationConfig.FULLY_DISABLED
-    "false"    | "1"        | ProductActivationConfig.FULLY_DISABLED
-    "0"        | null       | ProductActivationConfig.FULLY_DISABLED
-    "true"     | null       | ProductActivationConfig.FULLY_ENABLED
-    "true"     | ""         | ProductActivationConfig.FULLY_ENABLED
-    "true"     | "inactive" | ProductActivationConfig.FULLY_ENABLED
-    "true"     | "false"    | ProductActivationConfig.FULLY_ENABLED
-    "true"     | "0"        | ProductActivationConfig.FULLY_ENABLED
-    "true"     | "invalid"  | ProductActivationConfig.FULLY_ENABLED
-    "true"     | "true"     | ProductActivationConfig.FULLY_ENABLED
-    "true"     | "1"        | ProductActivationConfig.FULLY_ENABLED
-    "1"        | null       | ProductActivationConfig.FULLY_ENABLED
+    null       | null       | ProductActivation.ENABLED_INACTIVE
+    null       | ""         | ProductActivation.ENABLED_INACTIVE
+    null       | "inactive" | ProductActivation.ENABLED_INACTIVE
+    null       | "false"    | ProductActivation.FULLY_DISABLED
+    null       | "0"        | ProductActivation.FULLY_DISABLED
+    null       | "invalid"  | ProductActivation.FULLY_DISABLED
+    null       | "true"     | ProductActivation.FULLY_ENABLED
+    null       | "1"        | ProductActivation.FULLY_ENABLED
+    ""         | null       | ProductActivation.ENABLED_INACTIVE
+    ""         | ""         | ProductActivation.ENABLED_INACTIVE
+    ""         | "inactive" | ProductActivation.ENABLED_INACTIVE
+    ""         | "false"    | ProductActivation.FULLY_DISABLED
+    ""         | "0"        | ProductActivation.FULLY_DISABLED
+    ""         | "invalid"  | ProductActivation.FULLY_DISABLED
+    ""         | "true"     | ProductActivation.FULLY_ENABLED
+    ""         | "1"        | ProductActivation.FULLY_ENABLED
+    "inactive" | null       | ProductActivation.ENABLED_INACTIVE
+    "inactive" | ""         | ProductActivation.ENABLED_INACTIVE
+    "inactive" | "inactive" | ProductActivation.ENABLED_INACTIVE
+    "inactive" | "false"    | ProductActivation.ENABLED_INACTIVE
+    "inactive" | "0"        | ProductActivation.ENABLED_INACTIVE
+    "inactive" | "invalid"  | ProductActivation.ENABLED_INACTIVE
+    "inactive" | "true"     | ProductActivation.ENABLED_INACTIVE
+    "inactive" | "1"        | ProductActivation.ENABLED_INACTIVE
+    "false"    | null       | ProductActivation.FULLY_DISABLED
+    "false"    | ""         | ProductActivation.FULLY_DISABLED
+    "false"    | "inactive" | ProductActivation.FULLY_DISABLED
+    "false"    | "false"    | ProductActivation.FULLY_DISABLED
+    "false"    | "0"        | ProductActivation.FULLY_DISABLED
+    "false"    | "invalid"  | ProductActivation.FULLY_DISABLED
+    "false"    | "true"     | ProductActivation.FULLY_DISABLED
+    "false"    | "1"        | ProductActivation.FULLY_DISABLED
+    "0"        | null       | ProductActivation.FULLY_DISABLED
+    "true"     | null       | ProductActivation.FULLY_ENABLED
+    "true"     | ""         | ProductActivation.FULLY_ENABLED
+    "true"     | "inactive" | ProductActivation.FULLY_ENABLED
+    "true"     | "false"    | ProductActivation.FULLY_ENABLED
+    "true"     | "0"        | ProductActivation.FULLY_ENABLED
+    "true"     | "invalid"  | ProductActivation.FULLY_ENABLED
+    "true"     | "true"     | ProductActivation.FULLY_ENABLED
+    "true"     | "1"        | ProductActivation.FULLY_ENABLED
+    "1"        | null       | ProductActivation.FULLY_ENABLED
+  }
+
+  def "hostname discovery with environment variables"() {
+    setup:
+    final expectedHostname = "myhostname"
+    environmentVariables.set("HOSTNAME", expectedHostname)
+    environmentVariables.set("COMPUTERNAME", expectedHostname)
+
+    when:
+    def hostname = Config.initHostName()
+
+    then:
+    hostname == expectedHostname
+  }
+
+  def "hostname discovery without environment variables"() {
+    setup:
+    environmentVariables.set("HOSTNAME", "")
+    environmentVariables.set("COMPUTERNAME", "")
+
+    when:
+    def hostname = Config.initHostName()
+
+    then:
+    hostname != null
+    !hostname.trim().isEmpty()
+  }
+
+  def "config instantiation should fail if CI visibility agentless mode is enabled and API key is not set"() {
+    setup:
+    Properties properties = new Properties()
+    properties.setProperty(CIVISIBILITY_ENABLED, "true")
+    properties.setProperty(CIVISIBILITY_AGENTLESS_ENABLED, "true")
+
+    when:
+    new Config(ConfigProvider.withPropertiesOverride(properties))
+
+    then:
+    thrown FatalAgentMisconfigurationError
+  }
+
+  def "config instantiation should NOT fail if CI visibility agentless mode is enabled and API key is set"() {
+    setup:
+    Properties properties = new Properties()
+    properties.setProperty(CIVISIBILITY_ENABLED, "true")
+    properties.setProperty(CIVISIBILITY_AGENTLESS_ENABLED, "true")
+    properties.setProperty(API_KEY, "123456789")
+
+    when:
+    def config = new Config(ConfigProvider.withPropertiesOverride(properties))
+
+    then:
+    noExceptionThrown()
+    config.isCiVisibilityEnabled()
+    config.isCiVisibilityAgentlessEnabled()
   }
 
   static class ClassThrowsExceptionForValueOfMethod {
@@ -2110,5 +2148,50 @@ class ConfigTest extends DDSpecification {
       bs.set(i)
     }
     return bs
+  }
+
+  def "check trace propagation style overrides for "() {
+    setup:
+    if (pse) {
+      environmentVariables.set('DD_PROPAGATION_STYLE_EXTRACT', pse.toString())
+    }
+    if (psi) {
+      environmentVariables.set('DD_PROPAGATION_STYLE_INJECT', psi.toString())
+    }
+    if (tps) {
+      environmentVariables.set('DD_TRACE_PROPAGATION_STYLE', tps.toString())
+    }
+    if (tpse) {
+      environmentVariables.set('DD_TRACE_PROPAGATION_STYLE_EXTRACT', tpse.toString())
+    }
+    if (tpsi) {
+      environmentVariables.set('DD_TRACE_PROPAGATION_STYLE_INJECT', tpsi.toString())
+    }
+    when:
+    Config config = new Config()
+
+    then:
+    config.propagationStylesToExtract.asList() == ePSE
+    config.propagationStylesToInject.asList() == ePSI
+    config.tracePropagationStylesToExtract.asList() == eTPSE
+    config.tracePropagationStylesToInject.asList() == eTPSI
+
+    where:
+    // spotless:off
+    pse                      | psi                      | tps      | tpse               | tpsi    | ePSE                       | ePSI                       | eTPSE         | eTPSI
+    PropagationStyle.DATADOG | PropagationStyle.B3      | null     | null               | null    | [PropagationStyle.DATADOG] | [PropagationStyle.B3]      | [DATADOG]     | [B3, B3MULTI]
+    PropagationStyle.B3      | PropagationStyle.DATADOG | null     | null               | null    | [PropagationStyle.B3]      | [PropagationStyle.DATADOG] | [B3, B3MULTI] | [DATADOG]
+    PropagationStyle.B3      | PropagationStyle.DATADOG | HAYSTACK | null               | null    | [PropagationStyle.B3]      | [PropagationStyle.DATADOG] | [HAYSTACK]    | [HAYSTACK]
+    PropagationStyle.B3      | PropagationStyle.DATADOG | HAYSTACK | B3                 | null    | [PropagationStyle.B3]      | [PropagationStyle.DATADOG] | [B3]          | [HAYSTACK]
+    PropagationStyle.B3      | PropagationStyle.DATADOG | HAYSTACK | null               | B3MULTI | [PropagationStyle.B3]      | [PropagationStyle.DATADOG] | [HAYSTACK]    | [B3MULTI]
+    PropagationStyle.B3      | PropagationStyle.DATADOG | HAYSTACK | B3                 | B3MULTI | [PropagationStyle.B3]      | [PropagationStyle.DATADOG] | [B3]          | [B3MULTI]
+    PropagationStyle.B3      | PropagationStyle.DATADOG | null     | B3                 | B3MULTI | [PropagationStyle.B3]      | [PropagationStyle.DATADOG] | [B3]          | [B3MULTI]
+    null                     | null                     | HAYSTACK | null               | null    | [PropagationStyle.DATADOG] | [PropagationStyle.DATADOG] | [HAYSTACK]    | [HAYSTACK]
+    null                     | null                     | HAYSTACK | B3                 | B3MULTI | [PropagationStyle.DATADOG] | [PropagationStyle.DATADOG] | [B3]          | [B3MULTI]
+    null                     | null                     | null     | B3                 | B3MULTI | [PropagationStyle.DATADOG] | [PropagationStyle.DATADOG] | [B3]          | [B3MULTI]
+    null                     | null                     | null     | null               | null    | [PropagationStyle.DATADOG] | [PropagationStyle.DATADOG] | [DATADOG]     | [DATADOG]
+    null                     | null                     | null     | null               | null    | [PropagationStyle.DATADOG] | [PropagationStyle.DATADOG] | [DATADOG]     | [DATADOG]
+    null                     | null                     | null     | "b3 single header" | null    | [PropagationStyle.DATADOG] | [PropagationStyle.DATADOG] | [B3]          | [DATADOG]
+    // spotless:on
   }
 }

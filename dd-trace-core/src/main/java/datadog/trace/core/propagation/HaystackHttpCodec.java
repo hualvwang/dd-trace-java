@@ -3,7 +3,8 @@ package datadog.trace.core.propagation;
 import static datadog.trace.core.propagation.HttpCodec.firstHeaderValue;
 
 import datadog.trace.api.Config;
-import datadog.trace.api.DDId;
+import datadog.trace.api.DDSpanId;
+import datadog.trace.api.DDTraceId;
 import datadog.trace.api.sampling.PrioritySampling;
 import datadog.trace.bootstrap.instrumentation.api.AgentPropagation;
 import datadog.trace.core.DDSpanContext;
@@ -43,9 +44,17 @@ class HaystackHttpCodec {
     // This class should not be created. This also makes code coverage checks happy.
   }
 
-  public static final HttpCodec.Injector INJECTOR = new Injector();
+  public static HttpCodec.Injector newInjector(Map<String, String> invertedBaggageMapping) {
+    return new Injector(invertedBaggageMapping);
+  }
 
   private static class Injector implements HttpCodec.Injector {
+
+    private final Map<String, String> invertedBaggageMapping;
+
+    public Injector(Map<String, String> invertedBaggageMapping) {
+      this.invertedBaggageMapping = invertedBaggageMapping;
+    }
 
     @Override
     public <C> void inject(
@@ -63,25 +72,31 @@ class HaystackHttpCodec {
             getBaggageItemIgnoreCase(context.getBaggageItems(), HAYSTACK_TRACE_ID_BAGGAGE_KEY);
         String injectedTraceId;
         if (originalHaystackTraceId != null
-            && convertUUIDToBigInt(originalHaystackTraceId).equals(context.getTraceId())) {
+            && DDTraceId.fromHex(convertUUIDToHexString(originalHaystackTraceId))
+                .equals(context.getTraceId())) {
           injectedTraceId = originalHaystackTraceId;
         } else {
-          injectedTraceId = convertBigIntToUUID(context.getTraceId());
+          injectedTraceId = convertLongToUUID(context.getTraceId().toLong());
         }
         setter.set(carrier, TRACE_ID_KEY, injectedTraceId);
         context.setTag(HAYSTACK_TRACE_ID_BAGGAGE_KEY, injectedTraceId);
         setter.set(
             carrier, DD_TRACE_ID_BAGGAGE_KEY, HttpCodec.encode(context.getTraceId().toString()));
-        setter.set(carrier, SPAN_ID_KEY, convertBigIntToUUID(context.getSpanId()));
+        setter.set(carrier, SPAN_ID_KEY, convertLongToUUID(context.getSpanId()));
         setter.set(
-            carrier, DD_SPAN_ID_BAGGAGE_KEY, HttpCodec.encode(context.getSpanId().toString()));
-        setter.set(carrier, PARENT_ID_KEY, convertBigIntToUUID(context.getParentId()));
+            carrier,
+            DD_SPAN_ID_BAGGAGE_KEY,
+            HttpCodec.encode(DDSpanId.toString(context.getSpanId())));
+        setter.set(carrier, PARENT_ID_KEY, convertLongToUUID(context.getParentId()));
         setter.set(
-            carrier, DD_PARENT_ID_BAGGAGE_KEY, HttpCodec.encode(context.getParentId().toString()));
+            carrier,
+            DD_PARENT_ID_BAGGAGE_KEY,
+            HttpCodec.encode(DDSpanId.toString(context.getParentId())));
 
         for (final Map.Entry<String, String> entry : context.baggageItems()) {
-          setter.set(
-              carrier, OT_BAGGAGE_PREFIX + entry.getKey(), HttpCodec.encode(entry.getValue()));
+          String header = invertedBaggageMapping.get(entry.getKey());
+          header = header != null ? header : OT_BAGGAGE_PREFIX + entry.getKey();
+          setter.set(carrier, header, HttpCodec.encode(entry.getValue()));
         }
         log.debug(
             "{} - Haystack parent context injected - {}", context.getTraceId(), injectedTraceId);
@@ -101,13 +116,16 @@ class HaystackHttpCodec {
     }
   }
 
-  public static HttpCodec.Extractor newExtractor(final Map<String, String> tagMapping) {
+  public static HttpCodec.Extractor newExtractor(
+      final Map<String, String> tagMapping, Map<String, String> baggageMapping) {
     return new TagContextExtractor(
         tagMapping,
+        baggageMapping,
         new ContextInterpreter.Factory() {
           @Override
-          protected ContextInterpreter construct(Map<String, String> mapping) {
-            return new HaystackContextInterpreter(mapping);
+          protected ContextInterpreter construct(
+              Map<String, String> mapping, Map<String, String> baggageMapping) {
+            return new HaystackContextInterpreter(mapping, baggageMapping);
           }
         });
   }
@@ -119,12 +137,12 @@ class HaystackHttpCodec {
     private static final int TRACE_ID = 0;
     private static final int SPAN_ID = 1;
     private static final int PARENT_ID = 2;
-    private static final int TAGS = 3;
-    private static final int BAGGAGE = 4;
+    private static final int BAGGAGE = 3;
     private static final int IGNORE = -1;
 
-    private HaystackContextInterpreter(Map<String, String> taggedHeaders) {
-      super(taggedHeaders, Config.get());
+    private HaystackContextInterpreter(
+        Map<String, String> taggedHeaders, Map<String, String> baggageMapping) {
+      super(taggedHeaders, baggageMapping, Config.get());
     }
 
     @Override
@@ -178,43 +196,22 @@ class HaystackHttpCodec {
         default:
       }
 
-      if (handledIpHeaders(key, value)) {
-        return true;
-      }
-
-      if (!taggedHeaders.isEmpty() && classification == IGNORE) {
-        lowerCaseKey = toLowerCase(key);
-        if (taggedHeaders.containsKey(lowerCaseKey)) {
-          classification = TAGS;
-        }
-      }
       if (IGNORE != classification) {
         try {
           String firstValue = firstHeaderValue(value);
           if (null != firstValue) {
             switch (classification) {
               case TRACE_ID:
-                traceId = convertUUIDToBigInt(value);
+                traceId = DDTraceId.fromHex(convertUUIDToHexString(value));
                 addBaggageItem(HAYSTACK_TRACE_ID_BAGGAGE_KEY, value);
                 break;
               case SPAN_ID:
-                spanId = convertUUIDToBigInt(value);
+                spanId = DDSpanId.fromHex(convertUUIDToHexString(value));
                 addBaggageItem(HAYSTACK_SPAN_ID_BAGGAGE_KEY, value);
                 break;
               case PARENT_ID:
                 addBaggageItem(HAYSTACK_PARENT_ID_BAGGAGE_KEY, value);
                 break;
-              case TAGS:
-                {
-                  String mappedKey = taggedHeaders.get(lowerCaseKey);
-                  if (null != mappedKey) {
-                    if (tags.isEmpty()) {
-                      tags = new TreeMap<>();
-                    }
-                    tags.put(mappedKey, HttpCodec.decode(value));
-                  }
-                  break;
-                }
               case BAGGAGE:
                 {
                   addBaggageItem(lowerCaseKey.substring(BAGGAGE_PREFIX_LC.length()), value);
@@ -228,6 +225,14 @@ class HaystackHttpCodec {
           log.debug("Exception when extracting context", e);
           return false;
         }
+      } else {
+        if (handledIpHeaders(key, value)) {
+          return true;
+        }
+        if (handleTags(key, value)) {
+          return true;
+        }
+        handleMappedBaggage(key, value);
       }
       return true;
     }
@@ -245,18 +250,18 @@ class HaystackHttpCodec {
     }
   }
 
-  private static String convertBigIntToUUID(DDId id) {
+  private static String convertLongToUUID(long id) {
     // This is not a true/real UUID, as we don't care about the version and variant markers
     //  the creation is just taking the least significant bits and doing static most significant
     // ones.
     //  this is done for the purpose of being able to maintain cardinality and idempotence of the
     // conversion
-    String idHex = String.format("%016x", id.toLong());
+    String idHex = String.format("%016x", id);
     return DATADOG + "-" + idHex.substring(0, 4) + "-" + idHex.substring(4);
   }
 
   @SuppressForbidden
-  private static DDId convertUUIDToBigInt(String value) {
+  private static String convertUUIDToHexString(String value) {
     try {
       if (value.contains("-")) {
         String[] strings = value.split("-");
@@ -264,16 +269,16 @@ class HaystackHttpCodec {
         // significant one.
         if (strings.length == 5) {
           String idHex = strings[3] + strings[4];
-          return DDId.fromHex(idHex);
+          return idHex;
         }
         throw new NumberFormatException("Invalid UUID format: " + value);
       } else {
         // This could be a regular hex id without separators
         int length = value.length();
         if (length == 32) {
-          return DDId.fromHex(value.substring(16));
+          return value.substring(16);
         } else {
-          return DDId.fromHex(value);
+          return value;
         }
       }
     } catch (final Exception e) {

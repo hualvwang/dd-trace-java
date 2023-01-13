@@ -15,7 +15,6 @@ import java.util.Set;
 import net.bytebuddy.asm.AsmVisitorWrapper;
 import net.bytebuddy.description.field.FieldDescription;
 import net.bytebuddy.description.field.FieldList;
-import net.bytebuddy.description.method.MethodDescription;
 import net.bytebuddy.description.method.MethodList;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.implementation.Implementation;
@@ -24,7 +23,6 @@ import net.bytebuddy.jar.asm.ClassWriter;
 import net.bytebuddy.jar.asm.MethodVisitor;
 import net.bytebuddy.jar.asm.Opcodes;
 import net.bytebuddy.jar.asm.Type;
-import net.bytebuddy.matcher.ElementMatcher;
 import net.bytebuddy.pool.TypePool;
 
 /** Generates a 'Muzzle' side-class for each {@link Instrumenter}. */
@@ -84,13 +82,7 @@ public class MuzzleGenerator implements AsmVisitorWrapper {
     final Set<String> referenceSources = new HashSet<>();
     final Map<String, Reference> references = new LinkedHashMap<>();
     final Set<String> adviceClasses = new HashSet<>();
-    instrumenter.adviceTransformations(
-        new Instrumenter.AdviceTransformation() {
-          @Override
-          public void applyAdvice(ElementMatcher<? super MethodDescription> matcher, String name) {
-            adviceClasses.add(name);
-          }
-        });
+    instrumenter.adviceTransformations((matcher, name) -> adviceClasses.add(name));
     for (String adviceClass : adviceClasses) {
       if (referenceSources.add(adviceClass)) {
         for (Map.Entry<String, Reference> entry :
@@ -129,18 +121,26 @@ public class MuzzleGenerator implements AsmVisitorWrapper {
 
     ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
     cw.visit(
-        Opcodes.V1_7,
+        Opcodes.V1_8,
         Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL,
         Type.getInternalName(instrumenter.getClass()) + "$Muzzle",
         null,
-        "datadog/trace/agent/tooling/muzzle/ReferenceMatcher",
+        "java/lang/Object",
         null);
 
-    MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+    MethodVisitor mv =
+        cw.visitMethod(
+            Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC,
+            "create",
+            "()Ldatadog/trace/agent/tooling/muzzle/ReferenceMatcher;",
+            null,
+            null);
 
     mv.visitCode();
 
-    mv.visitIntInsn(Opcodes.ALOAD, 0);
+    mv.visitTypeInsn(Opcodes.NEW, "datadog/trace/agent/tooling/muzzle/ReferenceMatcher");
+    mv.visitInsn(Opcodes.DUP);
+
     mv.visitLdcInsn(references.size());
     mv.visitTypeInsn(Opcodes.ANEWARRAY, "datadog/trace/agent/tooling/muzzle/Reference");
 
@@ -159,7 +159,7 @@ public class MuzzleGenerator implements AsmVisitorWrapper {
         "([Ldatadog/trace/agent/tooling/muzzle/Reference;)V",
         false);
 
-    mv.visitInsn(Opcodes.RETURN);
+    mv.visitInsn(Opcodes.ARETURN);
 
     mv.visitMaxs(0, 0);
     mv.visitEnd();

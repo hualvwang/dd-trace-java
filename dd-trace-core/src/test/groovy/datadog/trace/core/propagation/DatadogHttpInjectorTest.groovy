@@ -1,6 +1,7 @@
 package datadog.trace.core.propagation
 
-import datadog.trace.api.DDId
+import datadog.trace.api.DDSpanId
+import datadog.trace.api.DDTraceId
 import datadog.trace.bootstrap.instrumentation.api.AgentTracer.NoopPathwayContext
 import datadog.trace.common.writer.ListWriter
 import datadog.trace.core.DDSpanContext
@@ -14,7 +15,7 @@ import static datadog.trace.core.propagation.DatadogHttpCodec.*
 
 class DatadogHttpInjectorTest extends DDCoreSpecification {
 
-  HttpCodec.Injector injector = DatadogHttpCodec.INJECTOR
+  HttpCodec.Injector injector = newInjector(["some-baggage-key":"SOME_CUSTOM_HEADER"])
 
   def "inject http headers"() {
     setup:
@@ -22,20 +23,20 @@ class DatadogHttpInjectorTest extends DDCoreSpecification {
     def tracer = tracerBuilder().writer(writer).build()
     final DDSpanContext mockedContext =
       new DDSpanContext(
-      DDId.from(traceId),
-      DDId.from(spanId),
-      DDId.ZERO,
+      DDTraceId.from(traceId),
+      DDSpanId.from(spanId),
+      DDSpanId.ZERO,
       null,
       "fakeService",
       "fakeOperation",
       "fakeResource",
       samplingPriority,
       origin,
-      ["k1" : "v1", "k2" : "v2"],
+      ["k1" : "v1", "k2" : "v2","some-baggage-key": "some-value"],
       false,
       "fakeType",
       0,
-      tracer.pendingTraceFactory.create(DDId.ONE),
+      tracer.pendingTraceFactory.create(DDTraceId.ONE),
       null,
       null,
       NoopPathwayContext.INSTANCE,
@@ -58,6 +59,7 @@ class DatadogHttpInjectorTest extends DDCoreSpecification {
     }
     1 * carrier.put(OT_BAGGAGE_PREFIX + "k1", "v1")
     1 * carrier.put(OT_BAGGAGE_PREFIX + "k2", "v2")
+    1 * carrier.put("SOME_CUSTOM_HEADER", "some-value")
     1 * carrier.put(DATADOG_TAGS_KEY, "_dd.p.usr=123")
     0 * _
 
@@ -78,9 +80,9 @@ class DatadogHttpInjectorTest extends DDCoreSpecification {
     def tracer = tracerBuilder().writer(writer).build()
     final DDSpanContext mockedContext =
       new DDSpanContext(
-      DDId.from("1"),
-      DDId.from("2"),
-      DDId.ZERO,
+      DDTraceId.from("1"),
+      DDSpanId.from("2"),
+      DDSpanId.ZERO,
       null,
       "fakeService",
       "fakeOperation",
@@ -91,7 +93,7 @@ class DatadogHttpInjectorTest extends DDCoreSpecification {
       false,
       "fakeType",
       0,
-      tracer.pendingTraceFactory.create(DDId.ONE),
+      tracer.pendingTraceFactory.create(DDTraceId.ONE),
       null,
       null,
       NoopPathwayContext.INSTANCE,
@@ -125,9 +127,9 @@ class DatadogHttpInjectorTest extends DDCoreSpecification {
     def tracer = tracerBuilder().writer(writer).build()
     final DDSpanContext mockedContext =
       new DDSpanContext(
-      DDId.from("1"),
-      DDId.from("2"),
-      DDId.ZERO,
+      DDTraceId.from("1"),
+      DDSpanId.from("2"),
+      DDSpanId.ZERO,
       null,
       "fakeService",
       "fakeOperation",
@@ -138,7 +140,7 @@ class DatadogHttpInjectorTest extends DDCoreSpecification {
       false,
       "fakeType",
       0,
-      tracer.pendingTraceFactory.create(DDId.ONE),
+      tracer.pendingTraceFactory.create(DDTraceId.ONE),
       null,
       null,
       NoopPathwayContext.INSTANCE,

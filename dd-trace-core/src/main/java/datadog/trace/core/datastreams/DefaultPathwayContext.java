@@ -7,7 +7,6 @@ import com.datadoghq.sketch.ddsketch.encoding.GrowingByteArrayOutput;
 import com.datadoghq.sketch.ddsketch.encoding.VarEncodingHelper;
 import datadog.trace.api.Config;
 import datadog.trace.api.WellKnownTags;
-import datadog.trace.api.function.Consumer;
 import datadog.trace.api.time.TimeSource;
 import datadog.trace.bootstrap.instrumentation.api.AgentPropagation;
 import datadog.trace.bootstrap.instrumentation.api.PathwayContext;
@@ -27,6 +26,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,6 +54,7 @@ public class DefaultPathwayContext implements PathwayContext {
           Arrays.asList(
               TagsProcessor.GROUP_TAG,
               TagsProcessor.TYPE_TAG,
+              TagsProcessor.DIRECTION_TAG,
               TagsProcessor.TOPIC_TAG,
               TagsProcessor.EXCHANGE_TAG));
 
@@ -106,6 +107,9 @@ public class DefaultPathwayContext implements PathwayContext {
 
       for (Map.Entry<String, String> entry : sortedTags.entrySet()) {
         String tag = TagsProcessor.createTag(entry.getKey(), entry.getValue());
+        if (tag == null) {
+          continue;
+        }
         if (hashableTagKeys.contains(entry.getKey())) {
           pathwayHashBuilder.addTag(tag);
         }
@@ -185,7 +189,7 @@ public class DefaultPathwayContext implements PathwayContext {
     try {
       if (started) {
         return "PathwayContext[ Hash "
-            + toUnsignedString(hash)
+            + Long.toUnsignedString(hash)
             + ", Start: "
             + pathwayStartNanos
             + ", StartTicks: "
@@ -201,18 +205,6 @@ public class DefaultPathwayContext implements PathwayContext {
     } finally {
       lock.unlock();
     }
-  }
-
-  // TODO Can be removed when Java7 support is removed
-  private static String toUnsignedString(long l) {
-    if (l >= 0) {
-      return Long.toString(l);
-    }
-
-    // shift left once and divide by 5 results in an unsigned divide by 10
-    long quot = (l >>> 1) / 5;
-    long rem = l - quot * 10;
-    return Long.toString(quot) + rem;
   }
 
   private static class PathwayContextExtractor implements AgentPropagation.KeyClassifier {

@@ -40,13 +40,14 @@
 1 io.micrometer.*
 1 io.micronaut.tracing.*
 1 java.*
-# allow exceptions for IAST. This is the only way to use existing infrastructure to detect the vulnerability without call site instrumentation.
-0 java.security.MessageDigest
 # allow exception profiling instrumentation
 0 java.lang.Throwable
+# allow ProcessImpl instrumentation
+0 java.lang.ProcessImpl
 0 java.net.HttpURLConnection
 0 java.net.URL
 0 java.nio.DirectByteBuffer
+0 java.nio.ByteBuffer
 0 java.rmi.*
 0 java.util.concurrent.*
 1 java.util.concurrent.ConcurrentHashMap*
@@ -81,6 +82,10 @@
 0 sun.net.www.protocol.https.*
 0 sun.rmi.server.*
 0 sun.rmi.transport.*
+0 sun.nio.ch.FileChannelImpl
+# Prevent IllegalAccessError in OpenJDK 17.0.4
+1 javax.management.*
+1 javax.swing.*
 
 # -------- ADDITIONAL IGNORES --------
 
@@ -250,11 +255,14 @@
 2 org.springframework.validation.*
 2 org.springframework.web.*
 0 org.springframework.web.context.request.async.*
+0 org.springframework.web.context.request.*
 0 org.springframework.web.context.support.AbstractRefreshableWebApplicationContext
 0 org.springframework.web.context.support.GenericWebApplicationContext
 0 org.springframework.web.context.support.XmlWebApplicationContext
 0 org.springframework.web.reactive.*
 0 org.springframework.web.servlet.*
+# Included for IAST
+0 org.springframework.web.util.WebUtils
 2 org.xml.*
 2 org.yaml.snakeyaml.*
 # saves ~0.5s skipping instrumentation of almost ~470 classes
