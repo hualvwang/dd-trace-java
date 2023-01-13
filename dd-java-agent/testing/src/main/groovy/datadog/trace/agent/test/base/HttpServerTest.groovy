@@ -16,6 +16,7 @@ import datadog.trace.api.gateway.Events
 import datadog.trace.api.gateway.Flow
 import datadog.trace.api.gateway.IGSpanInfo
 import datadog.trace.api.gateway.RequestContext
+import datadog.trace.api.gateway.RequestContextSlot
 import datadog.trace.api.http.StoredBodySupplier
 import datadog.trace.bootstrap.instrumentation.api.Tags
 import datadog.trace.bootstrap.instrumentation.api.URIDataAdapter
@@ -77,22 +78,22 @@ abstract class HttpServerTest<SERVER> extends WithHttpServer<SERVER> {
   @CompileStatic
   def setupSpec() {
     // Register the Instrumentation Gateway callbacks
-    def ig = get().instrumentationGateway()
+    def ss = get().getSubscriptionService(RequestContextSlot.APPSEC)
     def callbacks = new IGCallbacks()
     Events<IGCallbacks.Context> events = Events.get()
-    ig.registerCallback(events.requestStarted(), callbacks.requestStartedCb)
-    ig.registerCallback(events.requestEnded(), callbacks.requestEndedCb)
-    ig.registerCallback(events.requestHeader(), callbacks.requestHeaderCb)
-    ig.registerCallback(events.requestHeaderDone(), callbacks.requestHeaderDoneCb)
-    ig.registerCallback(events.requestMethodUriRaw(), callbacks.requestUriRawCb)
-    ig.registerCallback(events.requestClientSocketAddress(), callbacks.requestClientSocketAddressCb)
-    ig.registerCallback(events.requestBodyStart(), callbacks.requestBodyStartCb)
-    ig.registerCallback(events.requestBodyDone(), callbacks.requestBodyEndCb)
-    ig.registerCallback(events.requestBodyProcessed(), callbacks.requestBodyObjectCb)
-    ig.registerCallback(events.responseStarted(), callbacks.responseStartedCb)
-    ig.registerCallback(events.responseHeader(), callbacks.responseHeaderCb)
-    ig.registerCallback(events.responseHeaderDone(), callbacks.responseHeaderDoneCb)
-    ig.registerCallback(events.requestPathParams(), callbacks.requestParamsCb)
+    ss.registerCallback(events.requestStarted(), callbacks.requestStartedCb)
+    ss.registerCallback(events.requestEnded(), callbacks.requestEndedCb)
+    ss.registerCallback(events.requestHeader(), callbacks.requestHeaderCb)
+    ss.registerCallback(events.requestHeaderDone(), callbacks.requestHeaderDoneCb)
+    ss.registerCallback(events.requestMethodUriRaw(), callbacks.requestUriRawCb)
+    ss.registerCallback(events.requestClientSocketAddress(), callbacks.requestClientSocketAddressCb)
+    ss.registerCallback(events.requestBodyStart(), callbacks.requestBodyStartCb)
+    ss.registerCallback(events.requestBodyDone(), callbacks.requestBodyEndCb)
+    ss.registerCallback(events.requestBodyProcessed(), callbacks.requestBodyObjectCb)
+    ss.registerCallback(events.responseStarted(), callbacks.responseStartedCb)
+    ss.registerCallback(events.responseHeader(), callbacks.responseHeaderCb)
+    ss.registerCallback(events.responseHeaderDone(), callbacks.responseHeaderDoneCb)
+    ss.registerCallback(events.requestPathParams(), callbacks.requestParamsCb)
   }
 
   @Override
@@ -264,6 +265,10 @@ abstract class HttpServerTest<SERVER> extends WithHttpServer<SERVER> {
     false
   }
 
+  boolean testBlocking() {
+    false
+  }
+
   /** Tomcat 5.5 can't seem to handle the encoded URIs */
   boolean testEncodedPath() {
     true
@@ -272,6 +277,10 @@ abstract class HttpServerTest<SERVER> extends WithHttpServer<SERVER> {
   /** Return the expected path parameter */
   String testPathParam() {
     null
+  }
+
+  boolean testMultipleHeader() {
+    true
   }
 
   enum ServerEndpoint {
@@ -433,7 +442,8 @@ abstract class HttpServerTest<SERVER> extends WithHttpServer<SERVER> {
   def "test forwarded request"() {
     setup:
     assumeTrue(testForwarded())
-    def request = request(FORWARDED, method, body).header("x-forwarded-for", FORWARDED.body).build()
+    def ip = FORWARDED.body
+    def request = request(FORWARDED, method, body).header("x-forwarded-for", ip).build()
     def response = client.newCall(request).execute()
 
     expect:
@@ -444,7 +454,7 @@ abstract class HttpServerTest<SERVER> extends WithHttpServer<SERVER> {
     assertTraces(1) {
       trace(spanCount(FORWARDED)) {
         sortSpansByStart()
-        serverSpan(it, null, null, method, FORWARDED)
+        serverSpan(it, null, null, method, FORWARDED, null, ip)
         if (hasHandlerSpan()) {
           handlerSpan(it, FORWARDED)
         }
@@ -689,6 +699,7 @@ abstract class HttpServerTest<SERVER> extends WithHttpServer<SERVER> {
 
   def "test success with multiple header attached parent"() {
     setup:
+    assumeTrue(testMultipleHeader())
     def traceId = 123G
     def parentId = 456G
     def request = request(SUCCESS, method, body)
@@ -1050,6 +1061,71 @@ abstract class HttpServerTest<SERVER> extends WithHttpServer<SERVER> {
     }
   }
 
+  def 'test blocking of request with auto and accept=#acceptHeader'(boolean expectedJson, String acceptHeader) {
+    // Note: this does not actually test that the handler for SUCCESS is never called,
+    //       only that the response is the expected one (insofar as invoking the handler
+    //       does not result in another span being created)
+    setup:
+    assumeTrue(testBlocking())
+
+    def request = request(SUCCESS, 'GET', null)
+      .addHeader(IG_BLOCK_HEADER, 'auto').with {
+        if (acceptHeader) {
+          it.addHeader('Accept', 'text/html;q=0.9, application/json;q=0.8')
+        }
+        it.build()
+      }
+    def response = client.newCall(request).execute()
+
+    expect:
+    response.code() == 418
+    if (expectedJson) {
+      response.header('Content-type') =~ /(?i)\Aapplication\/json(?:;\s?charset=utf-8)?\z/
+      response.body().charStream().text.contains('"title": "You\'ve been blocked"')
+    } else {
+      response.header('Content-type') =~ /(?i)\Atext\/html;\s?charset=utf-8\z/
+      response.body().charStream().text.contains("<title>You've been blocked</title>")
+    }
+
+    when:
+    TEST_WRITER.waitForTraces(1)
+    def trace = TEST_WRITER.get(0)
+
+    then:
+    trace.size() == 1
+    trace[0].tags['http.status_code'] == 418
+
+    where:
+    expectedJson | acceptHeader
+    true         | null
+    false        | 'text/html;q=0.9, application/json;q=0.8'
+    true         | 'text/html;q=0.8, application/json;q=0.9'
+  }
+
+  def 'test blocking of request with json response'() {
+    setup:
+    assumeTrue(testBlocking())
+
+    def request = request(SUCCESS, 'GET', null)
+      .addHeader(IG_BLOCK_HEADER, 'json')
+      .addHeader('Accept', 'text/html')  // preference for html will be ignored
+      .build()
+    def response = client.newCall(request).execute()
+
+    expect:
+    response.code() == 418
+    response.header('Content-type') =~ /(?i)\Aapplication\/json(?:;\s?charset=utf-8)?\z/
+    response.body().charStream().text.contains('"title": "You\'ve been blocked"')
+
+    when:
+    TEST_WRITER.waitForTraces(1)
+    def trace = TEST_WRITER.get(0)
+
+    then:
+    trace.size() == 1
+    trace[0].tags['http.status_code'] == 418
+  }
+
   void controllerSpan(TraceAssert trace, ServerEndpoint endpoint = null) {
     def exception = endpoint == CUSTOM_EXCEPTION ? expectedCustomExceptionType() : expectedExceptionType()
     def errorMessage = endpoint?.body
@@ -1092,7 +1168,8 @@ abstract class HttpServerTest<SERVER> extends WithHttpServer<SERVER> {
     BigInteger parentID = null,
     String method = "GET",
     ServerEndpoint endpoint = SUCCESS,
-    Map<String, Serializable> extraTags = null) {
+    Map<String, Serializable> extraTags = null,
+    String clientIp = null) {
     Object expectedServerSpanRoute = expectedServerSpanRoute(endpoint)
     Map<String, Serializable> expectedExtraErrorInformation = hasExtraErrorInformation() ? expectedExtraErrorInformation(endpoint) : null
     boolean hasPeerInformation = hasPeerInformation()
@@ -1122,11 +1199,15 @@ abstract class HttpServerTest<SERVER> extends WithHttpServer<SERVER> {
             "$Tags.PEER_PORT" Integer
           }
           "$Tags.PEER_HOST_IPV4" { it == "127.0.0.1" || (endpoint == FORWARDED && it == endpoint.body) }
+          "$Tags.HTTP_CLIENT_IP" { it == "127.0.0.1" || (endpoint == FORWARDED && it == endpoint.body) }
+        } else {
+          "$Tags.HTTP_CLIENT_IP" clientIp
         }
         "$Tags.HTTP_HOSTNAME" address.host
         "$Tags.HTTP_URL" "$expectedUrl"
         "$Tags.HTTP_METHOD" method
         "$Tags.HTTP_STATUS" expectedStatus
+        "$Tags.HTTP_USER_AGENT" String
         if (endpoint == FORWARDED && hasForwardedIP) {
           "$Tags.HTTP_FORWARDED_IP" endpoint.body
         }
@@ -1154,6 +1235,7 @@ abstract class HttpServerTest<SERVER> extends WithHttpServer<SERVER> {
 
   static final String IG_EXTRA_SPAN_NAME_HEADER = "x-ig-write-tags"
   static final String IG_TEST_HEADER = "x-ig-test-header"
+  static final String IG_BLOCK_HEADER = "x-block"
   static final String IG_PEER_ADDRESS = "ig-peer-address"
   static final String IG_PEER_PORT = "ig-peer-port"
   static final String IG_RESPONSE_STATUS = "ig-response-status"
@@ -1170,6 +1252,7 @@ abstract class HttpServerTest<SERVER> extends WithHttpServer<SERVER> {
       HashMap<String, String> tags = new HashMap<>()
       StoredBodySupplier requestBodySupplier
       String responseEncoding
+      String blockingContentType
     }
 
     static final String stringOrEmpty(String string) {
@@ -1182,9 +1265,9 @@ abstract class HttpServerTest<SERVER> extends WithHttpServer<SERVER> {
       new Flow.ResultFlow<Context>(new Context())
     } as Supplier<Flow<Context>>)
 
-    final BiFunction<RequestContext<Context>, IGSpanInfo, Flow<Void>> requestEndedCb =
-    ({ RequestContext<Context> rqCtxt, IGSpanInfo info ->
-      def context = rqCtxt.data
+    final BiFunction<RequestContext, IGSpanInfo, Flow<Void>> requestEndedCb =
+    ({ RequestContext rqCtxt, IGSpanInfo info ->
+      Context context = rqCtxt.getData(RequestContextSlot.APPSEC)
       if (context.extraSpanName) {
         runUnderTrace(context.extraSpanName, false) {
           def span = activeSpan()
@@ -1194,33 +1277,47 @@ abstract class HttpServerTest<SERVER> extends WithHttpServer<SERVER> {
         }
       }
       Flow.ResultFlow.empty()
-    } as BiFunction<RequestContext<Context>, IGSpanInfo, Flow<Void>>)
+    } as BiFunction<RequestContext, IGSpanInfo, Flow<Void>>)
 
-    final TriConsumer<RequestContext<Context>, String, String> requestHeaderCb =
-    { RequestContext<Context> rqCtxt, String key, String value ->
-      def context = rqCtxt.data
+    final TriConsumer<RequestContext, String, String> requestHeaderCb =
+    { RequestContext rqCtxt, String key, String value ->
+      Context context = rqCtxt.getData(RequestContextSlot.APPSEC)
       if (IG_TEST_HEADER.equalsIgnoreCase(key)) {
         context.matchingHeaderValue = stringOrEmpty(context.matchingHeaderValue) + value
       }
       if (IG_EXTRA_SPAN_NAME_HEADER.equalsIgnoreCase(key)) {
         context.extraSpanName = value
       }
-    } as TriConsumer<RequestContext<Context>, String, String>
+      if (IG_BLOCK_HEADER.equalsIgnoreCase(key)) {
+        context.blockingContentType = value
+      }
+    } as TriConsumer<RequestContext, String, String>
 
-    final Function<RequestContext<Context>, Flow<Void>> requestHeaderDoneCb =
-    ({ RequestContext<Context> rqCtxt ->
-      def context = rqCtxt.data
+    final Function<RequestContext, Flow<Void>> requestHeaderDoneCb =
+    ({ RequestContext rqCtxt ->
+      Context context = rqCtxt.getData(RequestContextSlot.APPSEC)
       if (null != context.matchingHeaderValue) {
         context.doneHeaderValue = stringOrEmpty(context.doneHeaderValue) + context.matchingHeaderValue
       }
-      Flow.ResultFlow.empty()
-    } as Function<RequestContext<Context>, Flow<Void>>)
+
+      if (context.blockingContentType) {
+        new Flow.ResultFlow<Void>(null) {
+            @Override
+            Flow.Action getAction() {
+              new Flow.Action.RequestBlockingAction(418,
+                Flow.Action.BlockingContentType.valueOf(context.blockingContentType.toUpperCase(Locale.ROOT)))
+            }
+          }
+      } else {
+        Flow.ResultFlow.empty()
+      }
+    } as Function<RequestContext, Flow<Void>>)
 
     private static final String EXPECTED = "${QUERY_ENCODED_BOTH.rawPath}?${QUERY_ENCODED_BOTH.rawQuery}"
 
-    final TriFunction<RequestContext<Context>, String, URIDataAdapter, Flow<Void>> requestUriRawCb =
-    ({ RequestContext<Context> rqCtxt, String method, URIDataAdapter uri ->
-      def context = rqCtxt.data
+    final TriFunction<RequestContext, String, URIDataAdapter, Flow<Void>> requestUriRawCb =
+    ({ RequestContext rqCtxt, String method, URIDataAdapter uri ->
+      Context context = rqCtxt.getData(RequestContextSlot.APPSEC)
       String raw = uri.supportsRaw() ? uri.raw() : ''
       raw = uri.hasPlusEncodedSpaces() ? raw.replace('+', '%20') : raw
       // Only trigger for query path without query parameters and with special header
@@ -1231,35 +1328,35 @@ abstract class HttpServerTest<SERVER> extends WithHttpServer<SERVER> {
         context.doneHeaderValue = null
       }
       Flow.ResultFlow.empty()
-    } as TriFunction<RequestContext<Context>, String, URIDataAdapter, Flow<Void>>)
+    } as TriFunction<RequestContext, String, URIDataAdapter, Flow<Void>>)
 
-    final TriFunction<RequestContext<Context>, String, Integer, Flow<Void>> requestClientSocketAddressCb =
-    ({ RequestContext<Context> rqCtxt, String address, Integer port ->
-      def context = rqCtxt.data
+    final TriFunction<RequestContext, String, Integer, Flow<Void>> requestClientSocketAddressCb =
+    ({ RequestContext rqCtxt, String address, Integer port ->
+      Context context = rqCtxt.getData(RequestContextSlot.APPSEC)
       context.tags.put(IG_PEER_ADDRESS, address)
       context.tags.put(IG_PEER_PORT, String.valueOf(port))
       Flow.ResultFlow.empty()
-    } as TriFunction<RequestContext<Context>, String, Integer, Flow<Void>>)
+    } as TriFunction<RequestContext, String, Integer, Flow<Void>>)
 
-    final BiFunction<RequestContext<Context>, StoredBodySupplier, Void> requestBodyStartCb =
-    { RequestContext<Context> rqCtxt, StoredBodySupplier supplier ->
-      def context = rqCtxt.data
+    final BiFunction<RequestContext, StoredBodySupplier, Void> requestBodyStartCb =
+    { RequestContext rqCtxt, StoredBodySupplier supplier ->
+      Context context = rqCtxt.getData(RequestContextSlot.APPSEC)
       context.requestBodySupplier = supplier
       null
-    } as BiFunction<RequestContext<Context>, StoredBodySupplier, Void>
+    } as BiFunction<RequestContext, StoredBodySupplier, Void>
 
-    final BiFunction<RequestContext<Context>, StoredBodySupplier, Flow<Void>> requestBodyEndCb =
-    ({ RequestContext<Context> rqCtxt, StoredBodySupplier supplier ->
-      def context = rqCtxt.data
+    final BiFunction<RequestContext, StoredBodySupplier, Flow<Void>> requestBodyEndCb =
+    ({ RequestContext rqCtxt, StoredBodySupplier supplier ->
+      Context context = rqCtxt.getData(RequestContextSlot.APPSEC)
       if (!context.requestBodySupplier.is(supplier)) {
         throw new RuntimeException("Expected same instance: ${context.requestBodySupplier} and $supplier")
       }
       activeSpan().localRootSpan.setTag('request.body', supplier.get() as String)
       Flow.ResultFlow.empty()
-    } as BiFunction<RequestContext<Context>, StoredBodySupplier, Flow<Void>>)
+    } as BiFunction<RequestContext, StoredBodySupplier, Flow<Void>>)
 
-    final BiFunction<RequestContext<Context>, Object, Flow<Void>> requestBodyObjectCb =
-    ({ RequestContext<Context> rqCtxt, Object obj ->
+    final BiFunction<RequestContext, Object, Flow<Void>> requestBodyObjectCb =
+    ({ RequestContext rqCtxt, Object obj ->
       if (obj instanceof Map) {
         obj = obj.collectEntries {
           [
@@ -1273,39 +1370,39 @@ abstract class HttpServerTest<SERVER> extends WithHttpServer<SERVER> {
       }
       rqCtxt.traceSegment.setTagTop('request.body.converted', obj as String)
       Flow.ResultFlow.empty()
-    } as BiFunction<RequestContext<Context>, Object, Flow<Void>>)
+    } as BiFunction<RequestContext, Object, Flow<Void>>)
 
-    final BiFunction<RequestContext<Context>, Integer, Flow<Void>> responseStartedCb =
-    ({ RequestContext<Context> rqCtxt, Integer resultCode ->
-      def context = rqCtxt.data
+    final BiFunction<RequestContext, Integer, Flow<Void>> responseStartedCb =
+    ({ RequestContext rqCtxt, Integer resultCode ->
+      Context context = rqCtxt.getData(RequestContextSlot.APPSEC)
       context.tags.put(IG_RESPONSE_STATUS, String.valueOf(resultCode))
       Flow.ResultFlow.empty()
-    } as BiFunction<RequestContext<Context>, Integer, Flow<Void>>)
+    } as BiFunction<RequestContext, Integer, Flow<Void>>)
 
-    final TriConsumer<RequestContext<Context>, String, String> responseHeaderCb =
-    { RequestContext<Context> rqCtxt, String key, String value ->
-      def context = rqCtxt.data
+    final TriConsumer<RequestContext, String, String> responseHeaderCb =
+    { RequestContext rqCtxt, String key, String value ->
+      Context context = rqCtxt.getData(RequestContextSlot.APPSEC)
       if (IG_RESPONSE_HEADER.equalsIgnoreCase(key)) {
         context.responseEncoding = stringOrEmpty(context.responseEncoding) + value
       }
-    } as TriConsumer<RequestContext<Context>, String, String>
+    } as TriConsumer<RequestContext, String, String>
 
-    final Function<RequestContext<Context>, Flow<Void>> responseHeaderDoneCb =
-    ({ RequestContext<Context> rqCtxt ->
-      def context = rqCtxt.data
+    final Function<RequestContext, Flow<Void>> responseHeaderDoneCb =
+    ({ RequestContext rqCtxt ->
+      Context context = rqCtxt.getData(RequestContextSlot.APPSEC)
       if (null != context.responseEncoding) {
         context.tags.put(IG_RESPONSE_HEADER_TAG, context.responseEncoding)
       }
       Flow.ResultFlow.empty()
-    } as Function<RequestContext<Context>, Flow<Void>>)
+    } as Function<RequestContext, Flow<Void>>)
 
-    final BiFunction<RequestContext<Context>, Map<String, ?>, Flow<Void>> requestParamsCb =
-    { RequestContext<Context> rqCtxt, Map<String, ?> map ->
+    final BiFunction<RequestContext, Map<String, ?>, Flow<Void>> requestParamsCb =
+    { RequestContext rqCtxt, Map<String, ?> map ->
       if (map && !map.empty) {
-        def context = rqCtxt.data
+        Context context = rqCtxt.getData(RequestContextSlot.APPSEC)
         context.tags.put(IG_PATH_PARAMS_TAG, map)
       }
       Flow.ResultFlow.empty()
-    } as BiFunction<RequestContext<Context>, Map<String, ?>, Flow<Void>>
+    } as BiFunction<RequestContext, Map<String, ?>, Flow<Void>>
   }
 }

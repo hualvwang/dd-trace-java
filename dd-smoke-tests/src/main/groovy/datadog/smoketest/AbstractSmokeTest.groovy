@@ -1,6 +1,8 @@
 package datadog.smoketest
 
 import datadog.trace.agent.test.server.http.TestHttpServer
+import datadog.trace.api.function.Function
+import datadog.trace.test.agent.decoder.DecodedSpan
 import datadog.trace.test.agent.decoder.Decoder
 import datadog.trace.test.agent.decoder.DecodedMessage
 import datadog.trace.test.agent.decoder.DecodedTrace
@@ -79,7 +81,7 @@ abstract class AbstractSmokeTest extends ProcessManager {
     "${getMaxMemoryArgumentForFork()}",
     "${getMinMemoryArgumentForFork()}",
     "-javaagent:${shadowJarPath}",
-    "-XX:ErrorFile=/tmp/hs_err_pid%p.log",
+    isIBM ? "-Xdump:directory=/tmp" : "-XX:ErrorFile=/tmp/hs_err_pid%p.log",
     "-Ddd.trace.agent.port=${server.address.port}",
     "-Ddd.service.name=${SERVICE_NAME}",
     "-Ddd.env=${ENV}",
@@ -88,8 +90,10 @@ abstract class AbstractSmokeTest extends ProcessManager {
     "-Ddd.profiling.start-delay=${PROFILING_START_DELAY_SECONDS}",
     "-Ddd.profiling.upload.period=${PROFILING_RECORDING_UPLOAD_PERIOD_SECONDS}",
     "-Ddd.profiling.url=${getProfilingUrl()}",
-    "-Ddatadog.slf4j.simpleLogger.defaultLogLevel=debug",
-    "-Dorg.slf4j.simpleLogger.defaultLogLevel=debug"
+    "-Ddd.profiling.async.enabled=true",
+    "-Ddd.profiling.tracing_context.enabled=true",
+    "-Ddatadog.slf4j.simpleLogger.defaultLogLevel=${logLevel()}",
+    "-Dorg.slf4j.simpleLogger.defaultLogLevel=${logLevel()}"
   ]
 
   def setup() {
@@ -133,7 +137,26 @@ abstract class AbstractSmokeTest extends ProcessManager {
     traceCount.get()
   }
 
+  void waitForTrace(final PollingConditions poll, final Function<DecodedTrace, Boolean> predicate) {
+    assert decode != null // override decodedTracesCallback to avoid this and enable trace decoding
+    poll.eventually {
+      assert decodeTraces.find { predicate.apply(it) } != null
+    }
+  }
+
+  void waitForSpan(final PollingConditions poll, final Function<DecodedSpan, Boolean> predicate) {
+    waitForTrace(poll) { trace ->
+      trace.spans.find {
+        predicate.apply(it)
+      }
+    }
+  }
+
   List<DecodedTrace> getTraces() {
     decodeTraces
+  }
+
+  def logLevel() {
+    return "info"
   }
 }

@@ -15,6 +15,7 @@
  */
 package com.datadog.profiling.controller;
 
+import datadog.trace.api.Platform;
 import datadog.trace.api.config.ProfilingConfig;
 import datadog.trace.bootstrap.config.provider.ConfigProvider;
 import de.thetaphi.forbiddenapis.SuppressForbidden;
@@ -74,13 +75,10 @@ public final class ControllerFactory {
       }
     }
     if (impl == Implementation.NONE) {
-      boolean isOpenJ9 =
-          System.getProperty("java.vendor").equals("IBM Corporation")
-              && System.getProperty("java.runtime.name").startsWith("IBM Semeru Runtime");
-      if (configProvider.getBoolean(
+      if (Platform.isLinux()
+          && configProvider.getBoolean(
               ProfilingConfig.PROFILING_ASYNC_ENABLED,
-              ProfilingConfig.PROFILING_ASYNC_ENABLED_DEFAULT)
-          || isOpenJ9) {
+              ProfilingConfig.PROFILING_ASYNC_ENABLED_DEFAULT || Platform.isJ9())) {
         try {
           Class<?> asyncProfilerClass = Class.forName("com.datadog.profiling.async.AsyncProfiler");
           if ((boolean)

@@ -139,17 +139,13 @@ public interface AgentSpan extends MutableSpan, IGSpanInfo {
 
   boolean eligibleForDropping();
 
-  /** mark that the span has been captured in some task which will resume asynchronously. */
-  void startThreadMigration();
-
-  /** mark that the work associated with the span has resumed on a new thread */
-  void finishThreadMigration();
+  void startWork();
 
   /** Mark the end of a task associated with the span */
   void finishWork();
 
   /** RequestContext for the Instrumentation Gateway */
-  RequestContext<Object> getRequestContext();
+  RequestContext getRequestContext();
 
   void mergePathwayContext(PathwayContext pathwayContext);
 
@@ -169,13 +165,31 @@ public interface AgentSpan extends MutableSpan, IGSpanInfo {
     interface Extracted extends Context {
       String getForwarded();
 
-      String getForwardedProto();
+      String getXForwardedProto();
 
-      String getForwardedHost();
+      String getXForwardedHost();
 
-      String getForwardedIp();
+      String getXForwardedPort();
 
-      String getForwardedPort();
+      String getForwardedFor();
+
+      String getXForwarded();
+
+      String getXForwardedFor();
+
+      String getXClusterClientIp();
+
+      String getXRealIp();
+
+      String getClientIp();
+
+      String getUserAgent();
+
+      String getVia();
+
+      String getTrueClientIp();
+
+      String getCustomIpHeader();
     }
   }
 }

@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -26,7 +27,7 @@ class AsyncProfilerTest {
 
   @Test
   void test() throws Exception {
-    AsyncProfiler profiler = new AsyncProfiler(ConfigProvider.getInstance());
+    AsyncProfiler profiler = AsyncProfiler.newInstance(ConfigProvider.getInstance());
     if (!profiler.isAvailable()) {
       log.warn("Async Profiler not available. Skipping test.");
       return;
@@ -61,19 +62,28 @@ class AsyncProfilerTest {
 
   @ParameterizedTest
   @MethodSource("profilingModes")
-  void testStartCmd(boolean cpu, boolean alloc, boolean memleak) throws Exception {
+  void testStartCmd(boolean cpu, boolean wall, boolean alloc, boolean memleak) throws Exception {
     Properties props = new Properties();
     props.put(ProfilingConfig.PROFILING_ASYNC_CPU_ENABLED, Boolean.toString(cpu));
+    props.put(ProfilingConfig.PROFILING_ASYNC_WALL_ENABLED, Boolean.toString(wall));
     props.put(ProfilingConfig.PROFILING_ASYNC_ALLOC_ENABLED, Boolean.toString(alloc));
     props.put(ProfilingConfig.PROFILING_ASYNC_MEMLEAK_ENABLED, Boolean.toString(memleak));
 
-    AsyncProfiler profiler = new AsyncProfiler(ConfigProvider.withPropertiesOverride(props));
+    AsyncProfiler profiler =
+        AsyncProfiler.newInstance(ConfigProvider.withPropertiesOverride(props));
+    if (!profiler.isAvailable()) {
+      log.warn("Async Profiler not available. Skipping test.");
+      return;
+    }
 
     Path targetFile = Paths.get("/tmp/target.jfr");
     String cmd = profiler.cmdStartProfiling(targetFile);
 
     if (profiler.enabledModes().contains(ProfilingMode.CPU)) {
-      assertTrue(cmd.contains("event=cpu"));
+      assertTrue(cmd.contains("cpu="));
+    }
+    if (profiler.enabledModes().contains(ProfilingMode.WALL)) {
+      assertTrue(cmd.contains("wall="));
     }
     if (profiler.enabledModes().contains(ProfilingMode.ALLOCATION)) {
       assertTrue(cmd.contains("alloc="));
@@ -84,14 +94,9 @@ class AsyncProfilerTest {
   }
 
   private static Stream<Arguments> profilingModes() {
-    return Stream.of(
-        Arguments.of(false, false, false),
-        Arguments.of(false, false, true),
-        Arguments.of(false, true, false),
-        Arguments.of(false, true, true),
-        Arguments.of(true, false, false),
-        Arguments.of(true, false, true),
-        Arguments.of(true, true, false),
-        Arguments.of(true, true, true));
+    return IntStream.range(0, 1 << 4)
+        .mapToObj(
+            x ->
+                Arguments.of((x & 0x1000) != 0, (x & 0x100) != 0, (x & 0x10) != 0, (x & 0x1) != 0));
   }
 }

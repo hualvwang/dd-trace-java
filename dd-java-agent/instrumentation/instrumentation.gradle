@@ -32,7 +32,8 @@ subprojects { Project subProj ->
 
   instrument.plugins = [
     'datadog.trace.agent.tooling.muzzle.MuzzleGradlePlugin',
-    'datadog.trace.agent.tooling.bytebuddy.NewTaskForGradlePlugin'
+    'datadog.trace.agent.tooling.bytebuddy.NewTaskForGradlePlugin',
+    'datadog.trace.agent.tooling.bytebuddy.reqctx.RewriteRequestContextAdvicePlugin',
   ]
 
   subProj.tasks.withType(Javadoc).configureEach { enabled = false }
@@ -81,6 +82,10 @@ subprojects { Project subProj ->
           dependsOn(subTask)
         }
       }
+
+      if (subTask.name == 'latestDepTest') {
+        subTask.jvmArgs '-Dtest.dd.latestDepTest=true'
+      }
     }
   }
 
@@ -99,16 +104,6 @@ dependencies {
 
 tasks.named('shadowJar').configure {
   duplicatesStrategy = DuplicatesStrategy.FAIL
-  dependencies deps.sharedInverse
-  dependencies {
-    exclude(project(':dd-java-agent:agent-bootstrap'))
-    exclude(project(':dd-java-agent:agent-logging'))
-    exclude(project(':dd-trace-api'))
-    exclude(project(':internal-api'))
-    exclude(project(':internal-api:internal-api-8'))
-    exclude(project(':utils:time-utils'))
-    exclude(project(':utils:socket-utils'))
-    exclude(dependency('org.slf4j::'))
-  }
+  dependencies deps.excludeShared
 }
 

@@ -5,6 +5,7 @@ import com.datadog.profiling.controller.RecordingData;
 import com.datadog.profiling.controller.UnsupportedEnvironmentException;
 import com.datadog.profiling.utils.LibraryHelper;
 import com.datadog.profiling.utils.ProfilingMode;
+import datadog.trace.api.Platform;
 import datadog.trace.api.config.ProfilingConfig;
 import datadog.trace.bootstrap.config.provider.ConfigProvider;
 import java.io.File;
@@ -22,21 +23,38 @@ import javax.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * It is currently assumed that this class can be initialised early so that async-profiler's thread
+ * filter captures all tracing activity, which means it must not be modified to depend on JFR, so
+ * that it can be installed before tracing starts.
+ */
 public final class AsyncProfiler {
   private static final Logger log = LoggerFactory.getLogger(AsyncProfiler.class);
 
   public static final String TYPE = "async";
 
   private static final class Singleton {
-    private static final AsyncProfiler INSTANCE;
+    private static final AsyncProfiler INSTANCE = newInstance();
+  }
 
-    static {
-      try {
-        INSTANCE = new AsyncProfiler();
-      } catch (Throwable t) {
-        throw new RuntimeException(t);
-      }
+  static AsyncProfiler newInstance() {
+    AsyncProfiler instance = null;
+    try {
+      instance = new AsyncProfiler();
+    } catch (Throwable t) {
+      instance = new AsyncProfiler((Void) null);
     }
+    return instance;
+  }
+
+  static AsyncProfiler newInstance(ConfigProvider configProvider) {
+    AsyncProfiler instance = null;
+    try {
+      instance = new AsyncProfiler(configProvider);
+    } catch (Throwable t) {
+      instance = new AsyncProfiler((Void) null);
+    }
+    return instance;
   }
 
   private final long memleakIntervalDefault;
@@ -50,7 +68,13 @@ public final class AsyncProfiler {
     this(ConfigProvider.getInstance());
   }
 
-  AsyncProfiler(ConfigProvider configProvider) throws UnsupportedEnvironmentException {
+  private AsyncProfiler(Void dummy) {
+    this.configProvider = null;
+    this.asyncProfiler = null;
+    this.memleakIntervalDefault = 0L;
+  }
+
+  private AsyncProfiler(ConfigProvider configProvider) throws UnsupportedEnvironmentException {
     this.configProvider = configProvider;
     String libDir = configProvider.getString(ProfilingConfig.PROFILING_ASYNC_LIBPATH);
     if (libDir != null && Files.exists(Paths.get(libDir))) {
@@ -59,6 +83,8 @@ public final class AsyncProfiler {
     } else {
       asyncProfiler = inferFromOsAndArch();
     }
+    // TODO enable/disable events by name (e.g. datadog.ExecutionSample), not flag, so configuration
+    //  can be consistent with JFR event control
     if (configProvider.getBoolean(
         ProfilingConfig.PROFILING_ASYNC_ALLOC_ENABLED,
         ProfilingConfig.PROFILING_ASYNC_ALLOC_ENABLED_DEFAULT)) {
@@ -74,6 +100,10 @@ public final class AsyncProfiler {
         ProfilingConfig.PROFILING_ASYNC_CPU_ENABLED_DEFAULT)) {
       profilingModes.add(ProfilingMode.CPU);
     }
+    if (configProvider.getBoolean(
+        ProfilingConfig.PROFILING_ASYNC_WALL_ENABLED, getAsyncWallEnabledDefault())) {
+      profilingModes.add(ProfilingMode.WALL);
+    }
     try {
       // sanity test - force load async profiler to catch it not being available early
       asyncProfiler.execute("status");
@@ -88,6 +118,14 @@ public final class AsyncProfiler {
 
   public static AsyncProfiler getInstance() {
     return Singleton.INSTANCE;
+  }
+
+  private static boolean getAsyncWallEnabledDefault() {
+    if (Platform.isJ9()) {
+      // wallclock profiling is useless on J9 - do not automatically enable it
+      return false;
+    }
+    return ProfilingConfig.PROFILING_ASYNC_WALL_ENABLED_DEFAULT;
   }
 
   private static one.profiler.AsyncProfiler inferFromOsAndArch()
@@ -122,12 +160,28 @@ public final class AsyncProfiler {
             os,
             t.getMessage());
       }
+      throw new UnsupportedEnvironmentException(
+          String.format(
+              "Unable to instantiate async profiler for the detected environment: arch=%s, os=%s",
+              arch, os),
+          t);
     }
     throw new UnsupportedEnvironmentException(
         String.format(
-            "Unable to instantiate async profiler for the detected environment: arch={}, os={}",
-            arch,
-            os));
+            "Unable to instantiate async profiler for the detected environment: arch=%s, os=%s",
+            arch, os));
+  }
+
+  void addCurrentThread() {
+    if (asyncProfiler != null) {
+      asyncProfiler.addThread(Thread.currentThread());
+    }
+  }
+
+  void removeCurrentThread() {
+    if (asyncProfiler != null) {
+      asyncProfiler.removeThread(Thread.currentThread());
+    }
   }
 
   private static one.profiler.AsyncProfiler profilerForOsAndArch(
@@ -232,17 +286,24 @@ public final class AsyncProfiler {
     StringBuilder cmd = new StringBuilder("start,jfr=7");
     cmd.append(",file=").append(file.toAbsolutePath());
     cmd.append(",loglevel=").append(getLogLevel());
+    cmd.append(",jstackdepth=").append(getStackDepth());
+    cmd.append(",cstack=").append(getCStack());
+    cmd.append(",safemode=").append(getSafeMode());
     if (profilingModes.contains(ProfilingMode.CPU)) {
       // cpu profiling is enabled.
-      cmd.append(",event=")
-          .append(getCpuMode())
-          .append(",interval=")
-          .append(getCpuInterval())
-          .append('m')
-          .append(",jstackdepth=")
-          .append(getStackDepth())
-          .append(",safemode=")
-          .append(getSafeMode());
+      cmd.append(",cpu=").append(getCpuInterval()).append('m');
+    }
+    if (profilingModes.contains(ProfilingMode.WALL)) {
+      // wall profiling is enabled.
+      cmd.append(",wall=");
+      if (isCollapsingWallclock()) {
+        cmd.append('~'); // this prefix will turn on wall-clock collapsing feature
+      }
+      cmd.append(getWallInterval()).append('m');
+      if (AsyncProfilerConfig.isWallThreadFilterEnabled()) {
+        cmd.append(",filter=0");
+      }
+      cmd.append(",loglevel=").append(AsyncProfilerConfig.getLogLevel());
     }
     if (profilingModes.contains(ProfilingMode.ALLOCATION)) {
       // allocation profiling is enabled
@@ -274,21 +335,32 @@ public final class AsyncProfiler {
         ProfilingConfig.PROFILING_ASYNC_CPU_INTERVAL_DEFAULT);
   }
 
+  public int getWallInterval() {
+    return configProvider.getInteger(
+        ProfilingConfig.PROFILING_ASYNC_WALL_INTERVAL,
+        ProfilingConfig.PROFILING_ASYNC_WALL_INTERVAL_DEFAULT);
+  }
+
+  public boolean isCollapsingWallclock() {
+    return configProvider.getBoolean(
+        ProfilingConfig.PROFILING_ASYNC_WALL_COLLAPSE_SAMPLES,
+        ProfilingConfig.PROFILING_ASYNC_WALL_COLLAPSE_SAMPLES_DEFAULT);
+  }
+
   private int getStackDepth() {
     return configProvider.getInteger(
-        ProfilingConfig.PROFILING_ASYNC_CPU_STACKDEPTH,
-        ProfilingConfig.PROFILING_ASYNC_CPU_STACKDEPTH_DEFAULT);
+        ProfilingConfig.PROFILING_ASYNC_STACKDEPTH,
+        ProfilingConfig.PROFILING_ASYNC_STACKDEPTH_DEFAULT);
   }
 
   private int getSafeMode() {
     return configProvider.getInteger(
-        ProfilingConfig.PROFILING_ASYNC_CPU_SAFEMODE,
-        ProfilingConfig.PROFILING_ASYNC_CPU_SAFEMODE_DEFAULT);
+        ProfilingConfig.PROFILING_ASYNC_SAFEMODE, ProfilingConfig.PROFILING_ASYNC_SAFEMODE_DEFAULT);
   }
 
-  private String getCpuMode() {
+  private String getCStack() {
     return configProvider.getString(
-        ProfilingConfig.PROFILING_ASYNC_CPU_MODE, ProfilingConfig.PROFILING_ASYNC_CPU_MODE_DEFAULT);
+        ProfilingConfig.PROFILING_ASYNC_CSTACK, ProfilingConfig.PROFILING_ASYNC_CSTACK_DEFAULT);
   }
 
   public long getMemleakInterval() {
@@ -327,5 +399,25 @@ public final class AsyncProfiler {
 
   private int clamp(int min, int max, int value) {
     return Math.max(min, Math.min(max, value));
+  }
+
+  public void setContext(long spanId, long rootSpanId) {
+    if (asyncProfiler != null) {
+      try {
+        asyncProfiler.setContext(spanId, rootSpanId);
+      } catch (IllegalStateException e) {
+        log.warn("Failed to set context", e);
+      }
+    }
+  }
+
+  public void clearContext() {
+    if (asyncProfiler != null) {
+      try {
+        asyncProfiler.clearContext();
+      } catch (IllegalStateException e) {
+        log.warn("Failed to clear context", e);
+      }
+    }
   }
 }

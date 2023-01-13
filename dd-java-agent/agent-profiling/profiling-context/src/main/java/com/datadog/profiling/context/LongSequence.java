@@ -2,7 +2,7 @@ package com.datadog.profiling.context;
 
 import com.datadog.profiling.context.allocator.AllocatedBuffer;
 import java.util.Arrays;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -22,11 +22,36 @@ final class LongSequence {
   private class LongIteratorImpl implements LongIterator {
     int bufferReadSlot = 0;
     int allIndex = 0;
+
+    final AllocatedBuffer[] buffers;
+
     LongIterator currentIterator = null;
+    boolean released = false;
+
+    LongIteratorImpl() {
+      // check'n'update the state - if it is non-negative, increment the counter and proceed,
+      // otherwise bail out
+      if (STATE_UPDATER.updateAndGet(LongSequence.this, prev -> prev >= 0 ? prev + 1 : prev) < 0) {
+        // bail out if this instance was already released
+        this.buffers = null;
+        released = true;
+      } else {
+        this.buffers = LongSequence.this.buffers;
+      }
+    }
 
     @Override
     public boolean hasNext() {
+      if (released || buffers == null) {
+        return false;
+      }
       if (bufferReadSlot > bufferWriteSlot || allIndex >= size) {
+        // check'n'update the state - if it is negative before update, perform release, otherwise
+        // just decrement the counter
+        if (STATE_UPDATER.getAndUpdate(LongSequence.this, prev -> prev > 0 ? prev - 1 : prev) < 0) {
+          released = true;
+          doRelease();
+        }
         return false;
       }
       if (currentIterator == null) {
@@ -74,8 +99,12 @@ final class LongSequence {
     return (int) (Math.ceil(size / 8d) * 8);
   }
 
-  private AtomicInteger state = new AtomicInteger(0);
+  private volatile int state = 0;
+  private static final AtomicIntegerFieldUpdater<LongSequence> STATE_UPDATER =
+      AtomicIntegerFieldUpdater.newUpdater(LongSequence.class, "state");
+
   private final int limit;
+  private int capturedSize = -1;
 
   public LongSequence(Allocator allocator) {
     this(allocator, Integer.MAX_VALUE);
@@ -84,7 +113,6 @@ final class LongSequence {
   public LongSequence(Allocator allocator, int limit) {
     this.allocator = allocator;
     this.limit = limit;
-    this.bufferWriteSlot = -1;
     Arrays.fill(bufferBoundaryMap, Integer.MAX_VALUE);
   }
 
@@ -95,7 +123,7 @@ final class LongSequence {
   public int add(long value, boolean obeyLimit) {
     // check'n'update the state - if it is non-negative, increment the counter and proceed,
     // otherwise bail out
-    if (state.updateAndGet(prev -> prev >= 0 ? prev + 1 : prev) < 0) {
+    if (STATE_UPDATER.updateAndGet(this, prev -> prev >= 0 ? prev + 1 : prev) < 0) {
       // bail out if this instance was already released
       return -1;
     }
@@ -160,7 +188,7 @@ final class LongSequence {
     } finally {
       // check'n'update the state - if it is negative before update, perform release, otherwise just
       // decrement the counter
-      if (state.getAndUpdate(prev -> prev > 0 ? prev - 1 : prev) < 0) {
+      if (STATE_UPDATER.getAndUpdate(this, prev -> prev > 0 ? prev - 1 : prev) < 0) {
         doRelease();
       }
     }
@@ -169,7 +197,7 @@ final class LongSequence {
   public boolean set(int index, long value) {
     // check'n'update the state - if it is non-negative, increment the counter and proceed,
     // otherwise bail out
-    if (state.updateAndGet(prev -> prev >= 0 ? prev + 1 : prev) < 0) {
+    if (STATE_UPDATER.updateAndGet(this, prev -> prev >= 0 ? prev + 1 : prev) < 0) {
       // bail out if this instance was already released
       return false;
     }
@@ -187,7 +215,7 @@ final class LongSequence {
     } finally {
       // check'n'update the state - if it is negative before update, perform release, otherwise just
       // decrement the counter
-      if (state.getAndUpdate(prev -> prev > 0 ? prev - 1 : prev) < 0) {
+      if (STATE_UPDATER.getAndUpdate(this, prev -> prev > 0 ? prev - 1 : prev) < 0) {
         doRelease();
       }
     }
@@ -196,7 +224,7 @@ final class LongSequence {
   public long get(int index) {
     // check'n'update the state - if it is non-negative, increment the counter and proceed,
     // otherwise bail out
-    if (state.updateAndGet(prev -> prev >= 0 ? prev + 1 : prev) < 0) {
+    if (STATE_UPDATER.updateAndGet(this, prev -> prev >= 0 ? prev + 1 : prev) < 0) {
       // bail out if this instance was already released
       return Long.MIN_VALUE;
     }
@@ -214,7 +242,7 @@ final class LongSequence {
     } finally {
       // check'n'update the state - if it is negative before update, perform release, otherwise just
       // decrement the counter
-      if (state.getAndUpdate(prev -> prev > 0 ? prev - 1 : prev) < 0) {
+      if (STATE_UPDATER.getAndUpdate(this, prev -> prev > 0 ? prev - 1 : prev) < 0) {
         doRelease();
       }
     }
@@ -224,21 +252,52 @@ final class LongSequence {
     return size;
   }
 
+  /**
+   * Store and return the current sequence size - creating a kind of snapshot in time that could be
+   * used to make sure the subsequent iteration (eg. during persisting the data) will not overflow
+   * the limit deduced at the time of snapshotting.
+   *
+   * @return the sequence size
+   */
+  public int captureSize() {
+    capturedSize = size();
+    return capturedSize;
+  }
+
+  /**
+   * Get the last 'captured' size
+   *
+   * @return the captured size or {@literal -1} if the size has not been captured yet
+   */
+  public int getCapturedSize() {
+    return capturedSize;
+  }
+
+  void adjustCapturedSize(int diff) {
+    capturedSize += diff;
+  }
+
   public int sizeInBytes() {
     return sizeInBytes;
   }
 
   public void release() {
-    if (state.getAndUpdate(prev -> prev > 0 ? -1 * prev : prev) == 0) {
+    if (STATE_UPDATER.getAndUpdate(this, prev -> prev > 0 ? -1 * prev : prev) == 0) {
       doRelease();
     }
   }
 
   private void doRelease() {
-    for (int i = 0; i < buffers.length; i++) {
-      AllocatedBuffer buffer = buffers[i];
-      if (buffer != null) {
-        buffer.release();
+    if (STATE_UPDATER.getAndSet(this, -1) == -1) {
+      return;
+    }
+    ;
+    if (buffers != null) {
+      for (int i = 0; i < buffers.length; i++) {
+        AllocatedBuffer buffer = buffers[i];
+        if (buffer != null) {
+          buffer.release();
+        }
       }
     }
     // clear out the buffer slots to allow the most of the retained data to be GCed
@@ -246,7 +305,6 @@ final class LongSequence {
     buffers = null;
     bufferBoundaryMap = null;
     bufferInitSlot = -1;
-    state.set(-1);
   }
 
   public LongIterator iterator() {

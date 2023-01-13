@@ -13,6 +13,7 @@ import datadog.trace.api.Config;
 import datadog.trace.api.DDId;
 import datadog.trace.api.DDTags;
 import datadog.trace.api.function.ToIntFunction;
+import datadog.trace.api.gateway.Flow;
 import datadog.trace.api.gateway.RequestContext;
 import datadog.trace.api.profiling.TracingContextTracker;
 import datadog.trace.api.profiling.TracingContextTrackerFactory;
@@ -100,6 +101,9 @@ public class DDSpan
   private static final AtomicReferenceFieldUpdater<DDSpan, Object> WRAPPER_FIELD_UPDATER =
       AtomicReferenceFieldUpdater.newUpdater(DDSpan.class, Object.class, "wrapper");
 
+  // the request is to be blocked (AppSec)
+  private volatile Flow.Action.RequestBlockingAction requestBlockingAction;
+
   /**
    * Spans should be constructed using the builder, not by calling the constructor directly.
    *
@@ -155,8 +159,6 @@ public class DDSpan
   private void finishAndAddToTrace(final long durationNano) {
     // ensure a min duration of 1
     if (DURATION_NANO_UPDATER.compareAndSet(this, 0, Math.max(1, durationNano))) {
-      context.getTrace().onFinish(this);
-      tracingContextTracker.deactivateContext();
       PendingTrace.PublishState publishState = context.getTrace().onPublish(this);
       log.debug("Finished span ({}): {}", publishState, this);
     } else {
@@ -251,7 +253,6 @@ public class DDSpan
     }
     // Flip the negative bit of the result to allow verifying that publish() is only called once.
     if (DURATION_NANO_UPDATER.compareAndSet(this, 0, Math.max(1, durationNano) | Long.MIN_VALUE)) {
-      context.getTrace().onFinish(this);
       log.debug("Finished span (PHASED): {}", this);
       return true;
     } else {
@@ -425,6 +426,16 @@ public class DDSpan
   }
 
   @Override
+  public void setRequestBlockingAction(Flow.Action.RequestBlockingAction rba) {
+    this.requestBlockingAction = rba;
+  }
+
+  @Override
+  public Flow.Action.RequestBlockingAction getRequestBlockingAction() {
+    return requestBlockingAction;
+  }
+
+  @Override
   public DDSpan setTag(final String tag, final int value) {
     // can't use tag interceptor because it might set a metric
     // http.status is important because it is expected to be a string downstream
@@ -570,31 +581,30 @@ public class DDSpan
   }
 
   @Override
-  public void startThreadMigration() {
-    tracingContextTracker.maybeDeactivateContext();
-    if (hasCheckpoints()) {
-      context.getTracer().onStartThreadMigration(this);
+  public void startWork() {
+    if (tracingContextTracker != null) {
+      tracingContextTracker.activateContext();
     }
-  }
-
-  @Override
-  public void finishThreadMigration() {
-    tracingContextTracker.activateContext();
     if (hasCheckpoints()) {
-      context.getTracer().onFinishThreadMigration(this);
+      CoreTracer tracer = context.getTracer();
+      if (tracer != null) {
+        tracer.onStartWork(this);
+      }
     }
   }
 
   @Override
   public void finishWork() {
-    tracingContextTracker.deactivateContext();
+    if (tracingContextTracker != null) {
+      tracingContextTracker.deactivateContext();
+    }
     if (hasCheckpoints()) {
       context.getTracer().onFinishWork(this);
     }
   }
 
   @Override
-  public RequestContext<Object> getRequestContext() {
+  public RequestContext getRequestContext() {
     return context.getRequestContext();
   }
 

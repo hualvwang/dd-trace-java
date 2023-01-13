@@ -39,7 +39,6 @@ final class AuxiliaryAsyncProfiler implements AuxiliaryImplementation {
   private final AtomicBoolean recordingFlag = new AtomicBoolean(false);
   private final ConfigProvider configProvider;
   private final AsyncProfiler asyncProfiler;
-  private final Set<ProfilingMode> profilingModes = EnumSet.noneOf(ProfilingMode.class);
 
   AuxiliaryAsyncProfiler(ConfigProvider configProvider) {
     this.configProvider = configProvider;
@@ -62,16 +61,17 @@ final class AuxiliaryAsyncProfiler implements AuxiliaryImplementation {
               asyncProfiler.getVersion(),
               configProvider.getString(ProfilingConfig.PROFILING_ASYNC_LIBPATH),
               asyncProfiler.getCpuInterval(),
+              asyncProfiler.getWallInterval(),
               asyncProfiler.getAllocationInterval(),
               asyncProfiler.getMemleakInterval(),
               asyncProfiler.getMemleakCapacity(),
-              ProfilingMode.mask(profilingModes))
+              ProfilingMode.mask(asyncProfiler.enabledModes()))
           .commit();
     } catch (Throwable t) {
       if (log.isDebugEnabled()) {
         log.warn("Exception occurred while attempting to emit config event", t);
       } else {
-        log.warn("Exception occurred while attempting to emit config event", t.toString());
+        log.warn("Exception occurred while attempting to emit config event: {}", t.toString());
       }
       throw t;
     }

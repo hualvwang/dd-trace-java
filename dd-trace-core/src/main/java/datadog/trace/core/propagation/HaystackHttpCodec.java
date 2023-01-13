@@ -2,9 +2,9 @@ package datadog.trace.core.propagation;
 
 import static datadog.trace.core.propagation.HttpCodec.firstHeaderValue;
 
+import datadog.trace.api.Config;
 import datadog.trace.api.DDId;
 import datadog.trace.api.sampling.PrioritySampling;
-import datadog.trace.api.sampling.SamplingMechanism;
 import datadog.trace.bootstrap.instrumentation.api.AgentPropagation;
 import datadog.trace.core.DDSpanContext;
 import de.thetaphi.forbiddenapis.SuppressForbidden;
@@ -124,7 +124,7 @@ class HaystackHttpCodec {
     private static final int IGNORE = -1;
 
     private HaystackContextInterpreter(Map<String, String> taggedHeaders) {
-      super(taggedHeaders);
+      super(taggedHeaders, Config.get());
     }
 
     @Override
@@ -170,8 +170,18 @@ class HaystackHttpCodec {
             classification = BAGGAGE;
           }
           break;
+        case 'u':
+          if (handledUserAgent(key, value)) {
+            return true;
+          }
+          break;
         default:
       }
+
+      if (handledIpHeaders(key, value)) {
+        return true;
+      }
+
       if (!taggedHeaders.isEmpty() && classification == IGNORE) {
         lowerCaseKey = toLowerCase(key);
         if (taggedHeaders.containsKey(lowerCaseKey)) {
@@ -232,11 +242,6 @@ class HaystackHttpCodec {
     @Override
     protected int defaultSamplingPriority() {
       return PrioritySampling.SAMPLER_KEEP;
-    }
-
-    @Override
-    protected int defaultSamplingMechanism() {
-      return SamplingMechanism.DEFAULT;
     }
   }
 

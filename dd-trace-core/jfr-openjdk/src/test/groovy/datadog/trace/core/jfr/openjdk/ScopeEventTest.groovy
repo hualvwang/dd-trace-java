@@ -326,13 +326,11 @@ class ScopeEventTest extends DDSpecification {
 
     when: "span goes through lifecycle without activation"
     AgentSpan span = tracer.startSpan("test", true)
-    span.startThreadMigration()
-    span.finishThreadMigration()
     span.setResourceName("foo")
     span.finish()
     then: "checkpoints emitted"
     def events = filterEvents(JfrHelper.stopRecording(recording), ["datadog.Checkpoint", "datadog.Endpoint"])
-    events.size() == 5
+    events.size() == 1
     events.each {
       assert it.getLong("localRootSpanId") == span.getLocalRootSpan().getSpanId().toLong()
       if (it.eventType.name == "datadog.Checkpoint") {

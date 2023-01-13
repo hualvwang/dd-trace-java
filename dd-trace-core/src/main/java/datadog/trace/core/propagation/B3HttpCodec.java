@@ -103,7 +103,7 @@ class B3HttpCodec {
     private static final int IGNORE = -1;
 
     private B3ContextInterpreter(final Map<String, String> taggedHeaders) {
-      super(taggedHeaders);
+      super(taggedHeaders, Config.get());
     }
 
     @Override
@@ -143,9 +143,19 @@ class B3HttpCodec {
               return true;
             }
             break;
+          case 'u':
+            if (handledUserAgent(key, value)) {
+              return true;
+            }
+            break;
           default:
         }
       }
+
+      if (handledIpHeaders(key, value)) {
+        return true;
+      }
+
       if (!taggedHeaders.isEmpty() && classification == IGNORE) {
         lowerCaseKey = toLowerCase(key);
         if (taggedHeaders.containsKey(lowerCaseKey)) {

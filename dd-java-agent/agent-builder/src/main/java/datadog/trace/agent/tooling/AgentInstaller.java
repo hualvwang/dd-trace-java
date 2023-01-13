@@ -4,9 +4,12 @@ import static datadog.trace.agent.tooling.bytebuddy.matcher.GlobalIgnoresMatcher
 import static net.bytebuddy.matcher.ElementMatchers.isDefaultFinalizer;
 
 import datadog.trace.agent.tooling.bytebuddy.DDCachingPoolStrategy;
+import datadog.trace.agent.tooling.bytebuddy.DDOutlinePoolStrategy;
+import datadog.trace.agent.tooling.bytebuddy.SharedTypePools;
 import datadog.trace.agent.tooling.bytebuddy.matcher.DDElementMatchers;
-import datadog.trace.agent.tooling.context.FieldBackedContextProvider;
 import datadog.trace.api.Config;
+import datadog.trace.api.IntegrationsCollector;
+import datadog.trace.api.ProductActivationConfig;
 import datadog.trace.bootstrap.FieldBackedContextAccessor;
 import datadog.trace.bootstrap.instrumentation.java.concurrent.ExcludeFilter;
 import java.lang.instrument.Instrumentation;
@@ -14,7 +17,6 @@ import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
-import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import net.bytebuddy.ByteBuddy;
@@ -50,7 +52,8 @@ public class AgentInstaller {
      */
     if (Config.get().isTraceEnabled()
         || Config.get().isProfilingEnabled()
-        || Config.get().isAppSecEnabled()
+        || Config.get().getAppSecEnabledConfig() != ProductActivationConfig.FULLY_DISABLED
+        || Config.get().isIastEnabled()
         || Config.get().isCiVisibilityEnabled()) {
       installBytebuddyAgent(inst, false, new AgentBuilder.Listener[0]);
       if (DEBUG) {
@@ -73,8 +76,12 @@ public class AgentInstaller {
       final AgentBuilder.Listener... listeners) {
     Utils.setInstrumentation(inst);
 
-    FieldBackedContextProvider.resetContextMatchers();
-    DDCachingPoolStrategy.registerAsSupplier();
+    if (Config.get().isResolverOutlinePoolEnabled()) {
+      DDOutlinePoolStrategy.registerTypePoolFacade();
+    } else {
+      DDCachingPoolStrategy.registerAsSupplier();
+    }
+
     DDElementMatchers.registerAsSupplier();
 
     // By default ByteBuddy will skip all methods that are synthetic or default finalizer
@@ -88,10 +95,12 @@ public class AgentInstaller {
             .with(AgentStrategies.transformerDecorator())
             .with(AgentBuilder.RedefinitionStrategy.RETRANSFORMATION)
             .with(AgentStrategies.rediscoveryStrategy())
-            .with(AgentBuilder.DescriptionStrategy.Default.POOL_ONLY)
-            .with(AgentStrategies.poolStrategy())
-            .with(new ClassLoadListener())
             .with(AgentStrategies.locationStrategy())
+            .with(AgentStrategies.poolStrategy())
+            .with(AgentBuilder.DescriptionStrategy.Default.POOL_ONLY)
+            .with(AgentStrategies.bufferStrategy())
+            .with(AgentStrategies.typeStrategy())
+            .with(new ClassLoadListener())
             // FIXME: we cannot enable it yet due to BB/JVM bug, see
             // https://github.com/raphw/byte-buddy/issues/558
             // .with(AgentBuilder.LambdaInstrumentationStrategy.ENABLED)
@@ -109,14 +118,17 @@ public class AgentInstaller {
     for (final AgentBuilder.Listener listener : listeners) {
       agentBuilder = agentBuilder.with(listener);
     }
-    int numInstrumenters = 0;
-    ServiceLoader<Instrumenter> loader =
-        ServiceLoader.load(Instrumenter.class, AgentInstaller.class.getClassLoader());
+
+    Instrumenters instrumenters = Instrumenters.load(AgentInstaller.class.getClassLoader());
+
+    // pre-size state before registering instrumentations to reduce number of allocations
+    InstrumenterState.setMaxInstrumentationId(instrumenters.maxInstrumentationId());
+
     // This needs to be a separate loop through all the instrumenters before we start adding
-    // transfomers so that we can exclude field injection, since that will try to check exclusion
+    // advice so that we can exclude field injection, since that will try to check exclusion
     // immediately and we don't have the ability to express dependencies between different
     // instrumenters to control the load order.
-    for (final Instrumenter instrumenter : loader) {
+    for (Instrumenter instrumenter : instrumenters) {
       if (instrumenter instanceof ExcludeFilterProvider) {
         ExcludeFilterProvider provider = (ExcludeFilterProvider) instrumenter;
         ExcludeFilter.add(provider.excludedClasses());
@@ -130,8 +142,9 @@ public class AgentInstaller {
 
     AgentTransformerBuilder transformerBuilder = new AgentTransformerBuilder(agentBuilder);
 
+    int installedCount = 0;
     Set<Instrumenter.TargetSystem> enabledSystems = getEnabledSystems();
-    for (final Instrumenter instrumenter : loader) {
+    for (Instrumenter instrumenter : instrumenters) {
       if (!instrumenter.isApplicable(enabledSystems)) {
         if (DEBUG) {
           log.debug("Not applicable - instrumentation.class={}", instrumenter.getClass().getName());
@@ -141,20 +154,34 @@ public class AgentInstaller {
       if (DEBUG) {
         log.debug("Loading - instrumentation.class={}", instrumenter.getClass().getName());
       }
-
       try {
         instrumenter.instrument(transformerBuilder);
-        numInstrumenters++;
-      } catch (final Exception | LinkageError e) {
+        installedCount++;
+      } catch (Exception | LinkageError e) {
         log.error(
             "Failed to load - instrumentation.class={}", instrumenter.getClass().getName(), e);
       }
     }
     if (DEBUG) {
-      log.debug("Installed {} instrumenter(s)", numInstrumenters);
+      log.debug("Installed {} instrumenter(s)", installedCount);
     }
 
-    return transformerBuilder.installOn(inst);
+    if (Config.get().isTelemetryEnabled()) {
+      InstrumenterState.setObserver(
+          new InstrumenterState.Observer() {
+            @Override
+            public void applied(Iterable<String> instrumentationNames) {
+              IntegrationsCollector.get().update(instrumentationNames, true);
+            }
+          });
+    }
+
+    InstrumenterState.resetDefaultState();
+    try {
+      return transformerBuilder.installOn(inst);
+    } finally {
+      SharedTypePools.endInstall();
+    }
   }
 
   private static Set<Instrumenter.TargetSystem> getEnabledSystems() {
@@ -167,8 +194,11 @@ public class AgentInstaller {
     if (cfg.isProfilingEnabled()) {
       enabledSystems.add(Instrumenter.TargetSystem.PROFILING);
     }
-    if (cfg.isAppSecEnabled()) {
+    if (cfg.getAppSecEnabledConfig() != ProductActivationConfig.FULLY_DISABLED) {
       enabledSystems.add(Instrumenter.TargetSystem.APPSEC);
+    }
+    if (cfg.isIastEnabled()) {
+      enabledSystems.add(Instrumenter.TargetSystem.IAST);
     }
     if (cfg.isCiVisibilityEnabled()) {
       enabledSystems.add(Instrumenter.TargetSystem.CIVISIBILITY);

@@ -1,6 +1,7 @@
 package datadog.trace.core.propagation
 
 import datadog.trace.api.DDId
+import datadog.trace.bootstrap.ActiveSubsystems
 import datadog.trace.bootstrap.instrumentation.api.TagContext
 import datadog.trace.api.sampling.PrioritySampling
 import datadog.trace.bootstrap.instrumentation.api.ContextVisitors
@@ -17,8 +18,17 @@ class B3HttpExtractorTest extends DDSpecification {
 
   HttpCodec.Extractor extractor = B3HttpCodec.newExtractor(["SOME_HEADER": "some-tag"])
 
-  def setup() {
+  boolean origAppSecActive
+
+  void setup() {
+    origAppSecActive = ActiveSubsystems.APPSEC_ACTIVE
+    ActiveSubsystems.APPSEC_ACTIVE = true
+
     injectSysConfig(PROPAGATION_EXTRACT_LOG_HEADER_NAMES_ENABLED, "true")
+  }
+
+  void cleanup() {
+    ActiveSubsystems.APPSEC_ACTIVE = origAppSecActive
   }
 
   def "extract http headers"() {
@@ -228,9 +238,9 @@ class B3HttpExtractorTest extends DDSpecification {
 
     then:
     context != null
-    !(context instanceof ExtractedContext)
-    context.forwardedIp == forwardedIp
-    context.forwardedPort == forwardedPort
+    context instanceof TagContext
+    context.XForwardedFor == forwardedIp
+    context.XForwardedPort == forwardedPort
 
     when:
     context = extractor.extract(fullCtx, ContextVisitors.stringValuesMap())
@@ -239,8 +249,8 @@ class B3HttpExtractorTest extends DDSpecification {
     context instanceof ExtractedContext
     context.traceId.toLong() == 1
     context.spanId.toLong() == 2
-    context.forwardedIp == forwardedIp
-    context.forwardedPort == forwardedPort
+    context.XForwardedFor == forwardedIp
+    context.XForwardedPort == forwardedPort
 
     where:
     forwardedIp = "1.2.3.4"
@@ -322,5 +332,33 @@ class B3HttpExtractorTest extends DDSpecification {
     "a" * 16 + "f" * 16                | "1"                | DDId.MAX                         | DDId.ONE
     "1"                                | "f" * 16           | DDId.ONE                         | DDId.MAX
     "1"                                | "000" + "f" * 16   | DDId.ONE                         | DDId.MAX
+  }
+
+
+  def "extract common http headers"() {
+    setup:
+    def headers = [
+      (HttpCodec.USER_AGENT_KEY): 'some-user-agent',
+      (HttpCodec.X_CLUSTER_CLIENT_IP_KEY): '1.1.1.1',
+      (HttpCodec.X_REAL_IP_KEY): '2.2.2.2',
+      (HttpCodec.CLIENT_IP_KEY): '3.3.3.3',
+      (HttpCodec.TRUE_CLIENT_IP_KEY): '4.4.4.4',
+      (HttpCodec.VIA_KEY): '5.5.5.5',
+      (HttpCodec.FORWARDED_FOR_KEY): '6.6.6.6',
+      (HttpCodec.X_FORWARDED_KEY): '7.7.7.7'
+    ]
+
+    when:
+    final TagContext context = extractor.extract(headers, ContextVisitors.stringValuesMap())
+
+    then:
+    assert context.userAgent == 'some-user-agent'
+    assert context.XClusterClientIp == '1.1.1.1'
+    assert context.XRealIp == '2.2.2.2'
+    assert context.clientIp == '3.3.3.3'
+    assert context.trueClientIp == '4.4.4.4'
+    assert context.via == '5.5.5.5'
+    assert context.forwardedFor == '6.6.6.6'
+    assert context.XForwarded == '7.7.7.7'
   }
 }

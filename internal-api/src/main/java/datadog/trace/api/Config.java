@@ -10,6 +10,7 @@ import static datadog.trace.api.ConfigDefaults.DEFAULT_APPSEC_TRACE_RATE_LIMIT;
 import static datadog.trace.api.ConfigDefaults.DEFAULT_APPSEC_WAF_METRICS;
 import static datadog.trace.api.ConfigDefaults.DEFAULT_CIVISIBILITY_AGENTLESS_ENABLED;
 import static datadog.trace.api.ConfigDefaults.DEFAULT_CIVISIBILITY_ENABLED;
+import static datadog.trace.api.ConfigDefaults.DEFAULT_CLIENT_IP_ENABLED;
 import static datadog.trace.api.ConfigDefaults.DEFAULT_CLOCK_SYNC_PERIOD;
 import static datadog.trace.api.ConfigDefaults.DEFAULT_CWS_ENABLED;
 import static datadog.trace.api.ConfigDefaults.DEFAULT_CWS_TLS_REFRESH;
@@ -37,6 +38,13 @@ import static datadog.trace.api.ConfigDefaults.DEFAULT_HTTP_CLIENT_TAG_QUERY_STR
 import static datadog.trace.api.ConfigDefaults.DEFAULT_HTTP_SERVER_ERROR_STATUSES;
 import static datadog.trace.api.ConfigDefaults.DEFAULT_HTTP_SERVER_ROUTE_BASED_NAMING;
 import static datadog.trace.api.ConfigDefaults.DEFAULT_HTTP_SERVER_TAG_QUERY_STRING;
+import static datadog.trace.api.ConfigDefaults.DEFAULT_IAST_DEDUPLICATION_ENABLED;
+import static datadog.trace.api.ConfigDefaults.DEFAULT_IAST_ENABLED;
+import static datadog.trace.api.ConfigDefaults.DEFAULT_IAST_MAX_CONCURRENT_REQUESTS;
+import static datadog.trace.api.ConfigDefaults.DEFAULT_IAST_REQUEST_SAMPLING;
+import static datadog.trace.api.ConfigDefaults.DEFAULT_IAST_VULNERABILITIES_PER_REQUEST;
+import static datadog.trace.api.ConfigDefaults.DEFAULT_IAST_WEAK_CIPHER_ALGORITHMS;
+import static datadog.trace.api.ConfigDefaults.DEFAULT_IAST_WEAK_HASH_ALGORITHMS;
 import static datadog.trace.api.ConfigDefaults.DEFAULT_INTEGRATIONS_ENABLED;
 import static datadog.trace.api.ConfigDefaults.DEFAULT_JMX_FETCH_ENABLED;
 import static datadog.trace.api.ConfigDefaults.DEFAULT_JMX_FETCH_MULTIPLE_RUNTIME_SERVICES_ENABLED;
@@ -49,6 +57,13 @@ import static datadog.trace.api.ConfigDefaults.DEFAULT_PRIORITY_SAMPLING_FORCE;
 import static datadog.trace.api.ConfigDefaults.DEFAULT_PROPAGATION_EXTRACT_LOG_HEADER_NAMES_ENABLED;
 import static datadog.trace.api.ConfigDefaults.DEFAULT_PROPAGATION_STYLE_EXTRACT;
 import static datadog.trace.api.ConfigDefaults.DEFAULT_PROPAGATION_STYLE_INJECT;
+import static datadog.trace.api.ConfigDefaults.DEFAULT_REMOTE_CONFIG_ENABLED;
+import static datadog.trace.api.ConfigDefaults.DEFAULT_REMOTE_CONFIG_INITIAL_POLL_INTERVAL;
+import static datadog.trace.api.ConfigDefaults.DEFAULT_REMOTE_CONFIG_INTEGRITY_CHECK_ENABLED;
+import static datadog.trace.api.ConfigDefaults.DEFAULT_REMOTE_CONFIG_MAX_PAYLOAD_SIZE;
+import static datadog.trace.api.ConfigDefaults.DEFAULT_REMOTE_CONFIG_TARGETS_KEY;
+import static datadog.trace.api.ConfigDefaults.DEFAULT_REMOTE_CONFIG_TARGETS_KEY_ID;
+import static datadog.trace.api.ConfigDefaults.DEFAULT_RESOLVER_OUTLINE_POOL_SIZE;
 import static datadog.trace.api.ConfigDefaults.DEFAULT_RESOLVER_TYPE_POOL_SIZE;
 import static datadog.trace.api.ConfigDefaults.DEFAULT_RUNTIME_CONTEXT_FIELD_INJECTION;
 import static datadog.trace.api.ConfigDefaults.DEFAULT_SCOPE_DEPTH_LIMIT;
@@ -57,6 +72,8 @@ import static datadog.trace.api.ConfigDefaults.DEFAULT_SERIALVERSIONUID_FIELD_IN
 import static datadog.trace.api.ConfigDefaults.DEFAULT_SERVICE_NAME;
 import static datadog.trace.api.ConfigDefaults.DEFAULT_SERVLET_ROOT_CONTEXT_SERVICE_NAME;
 import static datadog.trace.api.ConfigDefaults.DEFAULT_SITE;
+import static datadog.trace.api.ConfigDefaults.DEFAULT_TELEMETRY_ENABLED;
+import static datadog.trace.api.ConfigDefaults.DEFAULT_TELEMETRY_HEARTBEAT_INTERVAL;
 import static datadog.trace.api.ConfigDefaults.DEFAULT_TRACE_AGENT_PORT;
 import static datadog.trace.api.ConfigDefaults.DEFAULT_TRACE_AGENT_V05_ENABLED;
 import static datadog.trace.api.ConfigDefaults.DEFAULT_TRACE_ANALYTICS_ENABLED;
@@ -67,16 +84,20 @@ import static datadog.trace.api.ConfigDefaults.DEFAULT_TRACE_METHODS;
 import static datadog.trace.api.ConfigDefaults.DEFAULT_TRACE_RATE_LIMIT;
 import static datadog.trace.api.ConfigDefaults.DEFAULT_TRACE_REPORT_HOSTNAME;
 import static datadog.trace.api.ConfigDefaults.DEFAULT_TRACE_RESOLVER_ENABLED;
+import static datadog.trace.api.ConfigDefaults.DEFAULT_TRACE_X_DATADOG_TAGS_MAX_LENGTH;
 import static datadog.trace.api.DDTags.HOST_TAG;
 import static datadog.trace.api.DDTags.INTERNAL_HOST_NAME;
 import static datadog.trace.api.DDTags.LANGUAGE_TAG_KEY;
 import static datadog.trace.api.DDTags.LANGUAGE_TAG_VALUE;
 import static datadog.trace.api.DDTags.RUNTIME_ID_TAG;
+import static datadog.trace.api.DDTags.RUNTIME_VERSION_TAG;
 import static datadog.trace.api.DDTags.SERVICE;
 import static datadog.trace.api.DDTags.SERVICE_TAG;
 import static datadog.trace.api.IdGenerationStrategy.RANDOM;
 import static datadog.trace.api.Platform.isJavaVersionAtLeast;
 import static datadog.trace.api.config.AppSecConfig.APPSEC_ENABLED;
+import static datadog.trace.api.config.AppSecConfig.APPSEC_HTTP_BLOCKED_TEMPLATE_HTML;
+import static datadog.trace.api.config.AppSecConfig.APPSEC_HTTP_BLOCKED_TEMPLATE_JSON;
 import static datadog.trace.api.config.AppSecConfig.APPSEC_IP_ADDR_HEADER;
 import static datadog.trace.api.config.AppSecConfig.APPSEC_OBFUSCATION_PARAMETER_KEY_REGEXP;
 import static datadog.trace.api.config.AppSecConfig.APPSEC_OBFUSCATION_PARAMETER_VALUE_REGEXP;
@@ -88,6 +109,9 @@ import static datadog.trace.api.config.AppSecConfig.APPSEC_WAF_METRICS;
 import static datadog.trace.api.config.CiVisibilityConfig.CIVISIBILITY_AGENTLESS_ENABLED;
 import static datadog.trace.api.config.CiVisibilityConfig.CIVISIBILITY_AGENTLESS_URL;
 import static datadog.trace.api.config.CiVisibilityConfig.CIVISIBILITY_ENABLED;
+import static datadog.trace.api.config.CrashTrackingConfig.CRASH_TRACKING_AGENTLESS;
+import static datadog.trace.api.config.CrashTrackingConfig.CRASH_TRACKING_AGENTLESS_DEFAULT;
+import static datadog.trace.api.config.CrashTrackingConfig.CRASH_TRACKING_TAGS;
 import static datadog.trace.api.config.CwsConfig.CWS_ENABLED;
 import static datadog.trace.api.config.CwsConfig.CWS_TLS_REFRESH;
 import static datadog.trace.api.config.DebuggerConfig.DEBUGGER_CLASSFILE_DUMP_ENABLED;
@@ -99,8 +123,6 @@ import static datadog.trace.api.config.DebuggerConfig.DEBUGGER_MAX_PAYLOAD_SIZE;
 import static datadog.trace.api.config.DebuggerConfig.DEBUGGER_METRICS_ENABLED;
 import static datadog.trace.api.config.DebuggerConfig.DEBUGGER_POLL_INTERVAL;
 import static datadog.trace.api.config.DebuggerConfig.DEBUGGER_PROBE_FILE_LOCATION;
-import static datadog.trace.api.config.DebuggerConfig.DEBUGGER_PROBE_URL;
-import static datadog.trace.api.config.DebuggerConfig.DEBUGGER_SNAPSHOT_URL;
 import static datadog.trace.api.config.DebuggerConfig.DEBUGGER_UPLOAD_BATCH_SIZE;
 import static datadog.trace.api.config.DebuggerConfig.DEBUGGER_UPLOAD_FLUSH_INTERVAL;
 import static datadog.trace.api.config.DebuggerConfig.DEBUGGER_UPLOAD_TIMEOUT;
@@ -128,12 +150,21 @@ import static datadog.trace.api.config.GeneralConfig.RUNTIME_METRICS_ENABLED;
 import static datadog.trace.api.config.GeneralConfig.SERVICE_NAME;
 import static datadog.trace.api.config.GeneralConfig.SITE;
 import static datadog.trace.api.config.GeneralConfig.TAGS;
+import static datadog.trace.api.config.GeneralConfig.TELEMETRY_ENABLED;
+import static datadog.trace.api.config.GeneralConfig.TELEMETRY_HEARTBEAT_INTERVAL;
 import static datadog.trace.api.config.GeneralConfig.TRACER_METRICS_BUFFERING_ENABLED;
 import static datadog.trace.api.config.GeneralConfig.TRACER_METRICS_ENABLED;
 import static datadog.trace.api.config.GeneralConfig.TRACER_METRICS_IGNORED_RESOURCES;
 import static datadog.trace.api.config.GeneralConfig.TRACER_METRICS_MAX_AGGREGATES;
 import static datadog.trace.api.config.GeneralConfig.TRACER_METRICS_MAX_PENDING;
 import static datadog.trace.api.config.GeneralConfig.VERSION;
+import static datadog.trace.api.config.IastConfig.IAST_DEDUPLICATION_ENABLED;
+import static datadog.trace.api.config.IastConfig.IAST_ENABLED;
+import static datadog.trace.api.config.IastConfig.IAST_MAX_CONCURRENT_REQUESTS;
+import static datadog.trace.api.config.IastConfig.IAST_REQUEST_SAMPLING;
+import static datadog.trace.api.config.IastConfig.IAST_VULNERABILITIES_PER_REQUEST;
+import static datadog.trace.api.config.IastConfig.IAST_WEAK_CIPHER_ALGORITHMS;
+import static datadog.trace.api.config.IastConfig.IAST_WEAK_HASH_ALGORITHMS;
 import static datadog.trace.api.config.JmxFetchConfig.JMX_FETCH_CHECK_PERIOD;
 import static datadog.trace.api.config.JmxFetchConfig.JMX_FETCH_CONFIG;
 import static datadog.trace.api.config.JmxFetchConfig.JMX_FETCH_CONFIG_DIR;
@@ -153,6 +184,8 @@ import static datadog.trace.api.config.ProfilingConfig.PROFILING_API_KEY_FILE_OL
 import static datadog.trace.api.config.ProfilingConfig.PROFILING_API_KEY_FILE_VERY_OLD;
 import static datadog.trace.api.config.ProfilingConfig.PROFILING_API_KEY_OLD;
 import static datadog.trace.api.config.ProfilingConfig.PROFILING_API_KEY_VERY_OLD;
+import static datadog.trace.api.config.ProfilingConfig.PROFILING_ASYNC_ALLOC_ENABLED_DEFAULT;
+import static datadog.trace.api.config.ProfilingConfig.PROFILING_ASYNC_ENABLED;
 import static datadog.trace.api.config.ProfilingConfig.PROFILING_ENABLED;
 import static datadog.trace.api.config.ProfilingConfig.PROFILING_ENABLED_DEFAULT;
 import static datadog.trace.api.config.ProfilingConfig.PROFILING_EXCEPTION_HISTOGRAM_MAX_COLLECTION_SIZE;
@@ -185,6 +218,13 @@ import static datadog.trace.api.config.ProfilingConfig.PROFILING_UPLOAD_SUMMARY_
 import static datadog.trace.api.config.ProfilingConfig.PROFILING_UPLOAD_TIMEOUT;
 import static datadog.trace.api.config.ProfilingConfig.PROFILING_UPLOAD_TIMEOUT_DEFAULT;
 import static datadog.trace.api.config.ProfilingConfig.PROFILING_URL;
+import static datadog.trace.api.config.RemoteConfigConfig.REMOTE_CONFIG_ENABLED;
+import static datadog.trace.api.config.RemoteConfigConfig.REMOTE_CONFIG_INITIAL_POLL_INTERVAL;
+import static datadog.trace.api.config.RemoteConfigConfig.REMOTE_CONFIG_INTEGRITY_CHECK_ENABLED;
+import static datadog.trace.api.config.RemoteConfigConfig.REMOTE_CONFIG_MAX_PAYLOAD_SIZE;
+import static datadog.trace.api.config.RemoteConfigConfig.REMOTE_CONFIG_TARGETS_KEY;
+import static datadog.trace.api.config.RemoteConfigConfig.REMOTE_CONFIG_TARGETS_KEY_ID;
+import static datadog.trace.api.config.RemoteConfigConfig.REMOTE_CONFIG_URL;
 import static datadog.trace.api.config.TraceInstrumentationConfig.DB_CLIENT_HOST_SPLIT_BY_INSTANCE;
 import static datadog.trace.api.config.TraceInstrumentationConfig.DB_CLIENT_HOST_SPLIT_BY_INSTANCE_TYPE_SUFFIX;
 import static datadog.trace.api.config.TraceInstrumentationConfig.GRPC_CLIENT_ERROR_STATUSES;
@@ -212,10 +252,13 @@ import static datadog.trace.api.config.TraceInstrumentationConfig.KAFKA_CLIENT_P
 import static datadog.trace.api.config.TraceInstrumentationConfig.LOGS_INJECTION_ENABLED;
 import static datadog.trace.api.config.TraceInstrumentationConfig.LOGS_MDC_TAGS_INJECTION_ENABLED;
 import static datadog.trace.api.config.TraceInstrumentationConfig.MESSAGE_BROKER_SPLIT_BY_DESTINATION;
-import static datadog.trace.api.config.TraceInstrumentationConfig.OSGI_SEARCH_DEPTH;
+import static datadog.trace.api.config.TraceInstrumentationConfig.OBFUSCATION_QUERY_STRING_REGEXP;
 import static datadog.trace.api.config.TraceInstrumentationConfig.PLAY_REPORT_HTTP_STATUS;
+import static datadog.trace.api.config.TraceInstrumentationConfig.RABBIT_INCLUDE_ROUTINGKEY_IN_RESOURCE;
 import static datadog.trace.api.config.TraceInstrumentationConfig.RABBIT_PROPAGATION_DISABLED_EXCHANGES;
 import static datadog.trace.api.config.TraceInstrumentationConfig.RABBIT_PROPAGATION_DISABLED_QUEUES;
+import static datadog.trace.api.config.TraceInstrumentationConfig.RESOLVER_OUTLINE_POOL_ENABLED;
+import static datadog.trace.api.config.TraceInstrumentationConfig.RESOLVER_OUTLINE_POOL_SIZE;
 import static datadog.trace.api.config.TraceInstrumentationConfig.RESOLVER_TYPE_POOL_SIZE;
 import static datadog.trace.api.config.TraceInstrumentationConfig.RESOLVER_USE_LOADCLASS;
 import static datadog.trace.api.config.TraceInstrumentationConfig.RUNTIME_CONTEXT_FIELD_INJECTION;
@@ -223,7 +266,6 @@ import static datadog.trace.api.config.TraceInstrumentationConfig.SERIALVERSIONU
 import static datadog.trace.api.config.TraceInstrumentationConfig.SERVLET_ASYNC_TIMEOUT_ERROR;
 import static datadog.trace.api.config.TraceInstrumentationConfig.SERVLET_PRINCIPAL_ENABLED;
 import static datadog.trace.api.config.TraceInstrumentationConfig.SERVLET_ROOT_CONTEXT_SERVICE_NAME;
-import static datadog.trace.api.config.TraceInstrumentationConfig.TEMP_JARS_CLEAN_ON_BOOT;
 import static datadog.trace.api.config.TraceInstrumentationConfig.TRACE_ANNOTATIONS;
 import static datadog.trace.api.config.TraceInstrumentationConfig.TRACE_CLASSES_EXCLUDE;
 import static datadog.trace.api.config.TraceInstrumentationConfig.TRACE_CLASSES_EXCLUDE_FILE;
@@ -239,6 +281,7 @@ import static datadog.trace.api.config.TracerConfig.AGENT_NAMED_PIPE;
 import static datadog.trace.api.config.TracerConfig.AGENT_PORT_LEGACY;
 import static datadog.trace.api.config.TracerConfig.AGENT_TIMEOUT;
 import static datadog.trace.api.config.TracerConfig.AGENT_UNIX_DOMAIN_SOCKET;
+import static datadog.trace.api.config.TracerConfig.CLIENT_IP_ENABLED;
 import static datadog.trace.api.config.TracerConfig.CLOCK_SYNC_PERIOD;
 import static datadog.trace.api.config.TracerConfig.CUSTOM_PROPAGATION_HEADERS;
 import static datadog.trace.api.config.TracerConfig.ENABLE_TRACE_AGENT_V05;
@@ -267,14 +310,18 @@ import static datadog.trace.api.config.TracerConfig.TRACE_AGENT_PATH;
 import static datadog.trace.api.config.TracerConfig.TRACE_AGENT_PORT;
 import static datadog.trace.api.config.TracerConfig.TRACE_AGENT_URL;
 import static datadog.trace.api.config.TracerConfig.TRACE_ANALYTICS_ENABLED;
+import static datadog.trace.api.config.TracerConfig.TRACE_CLIENT_IP_HEADER;
+import static datadog.trace.api.config.TracerConfig.TRACE_CLIENT_IP_RESOLVER_ENABLED;
 import static datadog.trace.api.config.TracerConfig.TRACE_HTTP_SERVER_PATH_RESOURCE_NAME_MAPPING;
 import static datadog.trace.api.config.TracerConfig.TRACE_RATE_LIMIT;
 import static datadog.trace.api.config.TracerConfig.TRACE_REPORT_HOSTNAME;
 import static datadog.trace.api.config.TracerConfig.TRACE_RESOLVER_ENABLED;
 import static datadog.trace.api.config.TracerConfig.TRACE_SAMPLE_RATE;
 import static datadog.trace.api.config.TracerConfig.TRACE_SAMPLING_OPERATION_RULES;
+import static datadog.trace.api.config.TracerConfig.TRACE_SAMPLING_RULES;
 import static datadog.trace.api.config.TracerConfig.TRACE_SAMPLING_SERVICE_RULES;
 import static datadog.trace.api.config.TracerConfig.TRACE_STRICT_WRITES_ENABLED;
+import static datadog.trace.api.config.TracerConfig.TRACE_X_DATADOG_TAGS_MAX_LENGTH;
 import static datadog.trace.api.config.TracerConfig.WRITER_TYPE;
 import static datadog.trace.util.CollectionUtils.tryMakeImmutableList;
 import static datadog.trace.util.CollectionUtils.tryMakeImmutableSet;
@@ -312,6 +359,7 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import javax.annotation.Nonnull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -339,6 +387,9 @@ public class Config {
    */
   private final String runtimeId;
 
+  /** This is the version of the runtime, ex: 1.8.0_332, 11.0.15, 17.0.3 */
+  private final String runtimeVersion;
+
   /**
    * Note: this has effect only on profiling site. Traces are sent to Datadog agent and are not
    * affected by this setting.
@@ -350,6 +401,7 @@ public class Config {
    */
   private final String site;
 
+  private final String hostName;
   private final String serviceName;
   private final boolean serviceNameSetByUser;
   private final String rootContextServiceName;
@@ -444,15 +496,20 @@ public class Config {
   private final Set<String> traceThreadPoolExecutorsExclude;
 
   private final boolean traceAnalyticsEnabled;
+  private final String traceClientIpHeader;
+  private final boolean traceClientIpResolverEnabled;
 
   private final Map<String, String> traceSamplingServiceRules;
   private final Map<String, String> traceSamplingOperationRules;
+  private final String traceSamplingRules;
   private final Double traceSampleRate;
   private final int traceRateLimit;
 
   private final boolean profilingEnabled;
   private final boolean profilingAgentless;
   private final boolean profilingLegacyTracingIntegrationEnabled;
+
+  private final boolean isAsyncProfilerEnabled;
   @Deprecated private final String profilingUrl;
   private final Map<String, String> profilingTags;
   private final int profilingStartDelay;
@@ -472,24 +529,41 @@ public class Config {
   private final boolean profilingHotspotsEnabled;
   private final boolean profilingUploadSummaryOn413Enabled;
 
-  private final boolean appSecEnabled;
+  private final boolean crashTrackingAgentless;
+  private final Map<String, String> crashTrackingTags;
+
+  private final boolean clientIpEnabled;
+
+  private final ProductActivationConfig appSecEnabled;
   private final boolean appSecReportingInband;
   private final String appSecRulesFile;
   private final int appSecReportMinTimeout;
   private final int appSecReportMaxTimeout;
-  private final String appSecIpAddrHeader;
   private final int appSecTraceRateLimit;
   private final boolean appSecWafMetrics;
   private final String appSecObfuscationParameterKeyRegexp;
   private final String appSecObfuscationParameterValueRegexp;
+  private final String appSecHttpBlockedTemplateHtml;
+  private final String appSecHttpBlockedTemplateJson;
+
+  private final boolean iastEnabled;
+  private final int iastMaxConcurrentRequests;
+  private final int iastVulnerabilitiesPerRequest;
+  private final float iastRequestSampling;
 
   private final boolean ciVisibilityEnabled;
   private final boolean ciVisibilityAgentlessEnabled;
   private final String ciVisibilityAgentlessUrl;
 
+  private final boolean remoteConfigEnabled;
+  private final boolean remoteConfigIntegrityCheckEnabled;
+  private final String remoteConfigUrl;
+  private final int remoteConfigInitialPollInterval;
+  private final long remoteConfigMaxPayloadSize;
+  private final String remoteConfigTargetsKeyId;
+  private final String remoteConfigTargetsKey;
+
   private final boolean debuggerEnabled;
-  private final String debuggerSnapshotUrl;
-  private final String debuggerProbeUrl;
   private final int debuggerUploadTimeout;
   private final int debuggerUploadFlushInterval;
   private final boolean debuggerClassFileDumpEnabled;
@@ -518,6 +592,8 @@ public class Config {
   private final Set<String> rabbitPropagationDisabledQueues;
   private final Set<String> rabbitPropagationDisabledExchanges;
 
+  private final boolean rabbitIncludeRoutingKeyInResource;
+
   private final boolean messageBrokerSplitByDestination;
 
   private final boolean hystrixTagsEnabled;
@@ -525,7 +601,7 @@ public class Config {
 
   private final boolean igniteCacheIncludeKeys;
 
-  private final int osgiSearchDepth;
+  private final String obfuscationQueryRegexp;
 
   // TODO: remove at a future point.
   private final boolean playReportHttpStatus;
@@ -533,7 +609,7 @@ public class Config {
   private final boolean servletPrincipalEnabled;
   private final boolean servletAsyncTimeoutError;
 
-  private final boolean tempJarsCleanOnBoot;
+  private final int xDatadogTagsMaxLength;
 
   private final boolean traceAgentV05Enabled;
 
@@ -544,8 +620,10 @@ public class Config {
 
   private final boolean internalExitOnFailure;
 
-  private final boolean resolverUseLoadClassEnabled;
+  private final boolean resolverOutlinePoolEnabled;
+  private final int resolverOutlinePoolSize;
   private final int resolverTypePoolSize;
+  private final boolean resolverUseLoadClassEnabled;
 
   private final String jdbcPreparedStatementClassName;
   private final String jdbcConnectionClassName;
@@ -560,6 +638,15 @@ public class Config {
   private final int cwsTlsRefresh;
 
   private final boolean dataStreamsEnabled;
+
+  private final Set<String> iastWeakHashAlgorithms;
+
+  private final Pattern iastWeakCipherAlgorithms;
+
+  private final boolean iastDeduplicationEnabled;
+
+  private final boolean telemetryEnabled;
+  private final int telemetryHeartbeatInterval;
 
   private final boolean azureAppServices;
   private final String traceAgentPath;
@@ -587,6 +674,7 @@ public class Config {
             : configProvider.getBoolean(RUNTIME_ID_ENABLED, true)
                 ? UUID.randomUUID().toString()
                 : "";
+    runtimeVersion = System.getProperty("java.version", "unknown");
 
     // Note: We do not want APiKey to be loaded from property for security reasons
     // Note: we do not use defined default here
@@ -603,6 +691,8 @@ public class Config {
       }
     }
     site = configProvider.getString(SITE, DEFAULT_SITE);
+
+    hostName = initHostName();
 
     String userProvidedServiceName =
         configProvider.getStringExcludingSource(
@@ -904,8 +994,21 @@ public class Config {
     traceAnalyticsEnabled =
         configProvider.getBoolean(TRACE_ANALYTICS_ENABLED, DEFAULT_TRACE_ANALYTICS_ENABLED);
 
+    String traceClientIpHeader = configProvider.getString(TRACE_CLIENT_IP_HEADER);
+    if (traceClientIpHeader == null) {
+      traceClientIpHeader = configProvider.getString(APPSEC_IP_ADDR_HEADER);
+    }
+    if (traceClientIpHeader != null) {
+      traceClientIpHeader = traceClientIpHeader.toLowerCase(Locale.ROOT);
+    }
+    this.traceClientIpHeader = traceClientIpHeader;
+
+    this.traceClientIpResolverEnabled =
+        configProvider.getBoolean(TRACE_CLIENT_IP_RESOLVER_ENABLED, true);
+
     traceSamplingServiceRules = configProvider.getMergedMap(TRACE_SAMPLING_SERVICE_RULES);
     traceSamplingOperationRules = configProvider.getMergedMap(TRACE_SAMPLING_OPERATION_RULES);
+    traceSamplingRules = configProvider.getString(TRACE_SAMPLING_RULES);
     traceSampleRate = configProvider.getDouble(TRACE_SAMPLE_RATE);
     traceRateLimit = configProvider.getInteger(TRACE_RATE_LIMIT, DEFAULT_TRACE_RATE_LIMIT);
 
@@ -915,11 +1018,13 @@ public class Config {
     profilingLegacyTracingIntegrationEnabled =
         configProvider.getBoolean(
             PROFILING_LEGACY_TRACING_INTEGRATION, PROFILING_LEGACY_TRACING_INTEGRATION_DEFAULT);
+    isAsyncProfilerEnabled =
+        configProvider.getBoolean(PROFILING_ASYNC_ENABLED, PROFILING_ASYNC_ALLOC_ENABLED_DEFAULT);
     profilingUrl = configProvider.getString(PROFILING_URL);
 
     if (tmpApiKey == null) {
       final String oldProfilingApiKeyFile = configProvider.getString(PROFILING_API_KEY_FILE_OLD);
-      tmpApiKey = System.getenv(propertyNameToEnvironmentVariableName(PROFILING_API_KEY_OLD));
+      tmpApiKey = getEnv(propertyNameToEnvironmentVariableName(PROFILING_API_KEY_OLD));
       if (oldProfilingApiKeyFile != null) {
         try {
           tmpApiKey =
@@ -934,7 +1039,7 @@ public class Config {
     if (tmpApiKey == null) {
       final String veryOldProfilingApiKeyFile =
           configProvider.getString(PROFILING_API_KEY_FILE_VERY_OLD);
-      tmpApiKey = System.getenv(propertyNameToEnvironmentVariableName(PROFILING_API_KEY_VERY_OLD));
+      tmpApiKey = getEnv(propertyNameToEnvironmentVariableName(PROFILING_API_KEY_VERY_OLD));
       if (veryOldProfilingApiKeyFile != null) {
         try {
           tmpApiKey =
@@ -988,7 +1093,36 @@ public class Config {
         configProvider.getBoolean(
             PROFILING_UPLOAD_SUMMARY_ON_413, PROFILING_UPLOAD_SUMMARY_ON_413_DEFAULT);
 
-    appSecEnabled = configProvider.getBoolean(APPSEC_ENABLED, DEFAULT_APPSEC_ENABLED);
+    crashTrackingAgentless =
+        configProvider.getBoolean(CRASH_TRACKING_AGENTLESS, CRASH_TRACKING_AGENTLESS_DEFAULT);
+    crashTrackingTags = configProvider.getMergedMap(CRASH_TRACKING_TAGS);
+
+    telemetryEnabled = configProvider.getBoolean(TELEMETRY_ENABLED, DEFAULT_TELEMETRY_ENABLED);
+    int telemetryInterval =
+        configProvider.getInteger(
+            TELEMETRY_HEARTBEAT_INTERVAL, DEFAULT_TELEMETRY_HEARTBEAT_INTERVAL);
+    if (telemetryInterval < 1 || telemetryInterval > 3600) {
+      log.warn(
+          "Wrong Telemetry heartbeat interval: {}. The value must be in range 1-3600",
+          telemetryInterval);
+      telemetryInterval = DEFAULT_TELEMETRY_HEARTBEAT_INTERVAL;
+    }
+    telemetryHeartbeatInterval = telemetryInterval;
+
+    this.clientIpEnabled = configProvider.getBoolean(CLIENT_IP_ENABLED, DEFAULT_CLIENT_IP_ENABLED);
+
+    // ConfigProvider.getString currently doesn't fallback to default for empty strings. So we have
+    // special handling here until we have a general solution for empty string value fallback.
+    String appSecEnabled = configProvider.getString(APPSEC_ENABLED);
+    if (appSecEnabled == null || appSecEnabled.isEmpty()) {
+      appSecEnabled =
+          configProvider.getStringExcludingSource(
+              APPSEC_ENABLED, DEFAULT_APPSEC_ENABLED, SystemPropertiesConfigSource.class);
+      if (appSecEnabled.isEmpty()) {
+        appSecEnabled = DEFAULT_APPSEC_ENABLED;
+      }
+    }
+    this.appSecEnabled = ProductActivationConfig.fromString(appSecEnabled);
     appSecReportingInband =
         configProvider.getBoolean(APPSEC_REPORTING_INBAND, DEFAULT_APPSEC_REPORTING_INBAND);
     appSecRulesFile = configProvider.getString(APPSEC_RULES_FILE, null);
@@ -996,11 +1130,6 @@ public class Config {
     // Default AppSec report timeout min=5, max=60
     appSecReportMaxTimeout = configProvider.getInteger(APPSEC_REPORT_TIMEOUT_SEC, 60);
     appSecReportMinTimeout = Math.min(appSecReportMaxTimeout, 5);
-    String appSecIpAddrHeader = configProvider.getString(APPSEC_IP_ADDR_HEADER);
-    if (appSecIpAddrHeader != null) {
-      appSecIpAddrHeader = appSecIpAddrHeader.toLowerCase(Locale.ROOT);
-    }
-    this.appSecIpAddrHeader = appSecIpAddrHeader;
 
     appSecTraceRateLimit =
         configProvider.getInteger(APPSEC_TRACE_RATE_LIMIT, DEFAULT_APPSEC_TRACE_RATE_LIMIT);
@@ -1011,6 +1140,30 @@ public class Config {
         configProvider.getString(APPSEC_OBFUSCATION_PARAMETER_KEY_REGEXP, null);
     appSecObfuscationParameterValueRegexp =
         configProvider.getString(APPSEC_OBFUSCATION_PARAMETER_VALUE_REGEXP, null);
+
+    appSecHttpBlockedTemplateHtml =
+        configProvider.getString(APPSEC_HTTP_BLOCKED_TEMPLATE_HTML, null);
+    appSecHttpBlockedTemplateJson =
+        configProvider.getString(APPSEC_HTTP_BLOCKED_TEMPLATE_JSON, null);
+
+    iastEnabled = configProvider.getBoolean(IAST_ENABLED, DEFAULT_IAST_ENABLED);
+    iastMaxConcurrentRequests =
+        configProvider.getInteger(
+            IAST_MAX_CONCURRENT_REQUESTS, DEFAULT_IAST_MAX_CONCURRENT_REQUESTS);
+    iastVulnerabilitiesPerRequest =
+        configProvider.getInteger(
+            IAST_VULNERABILITIES_PER_REQUEST, DEFAULT_IAST_VULNERABILITIES_PER_REQUEST);
+    iastRequestSampling =
+        configProvider.getFloat(IAST_REQUEST_SAMPLING, DEFAULT_IAST_REQUEST_SAMPLING);
+    iastWeakHashAlgorithms =
+        tryMakeImmutableSet(
+            configProvider.getSet(IAST_WEAK_HASH_ALGORITHMS, DEFAULT_IAST_WEAK_HASH_ALGORITHMS));
+    iastWeakCipherAlgorithms =
+        getPattern(
+            DEFAULT_IAST_WEAK_CIPHER_ALGORITHMS,
+            configProvider.getString(IAST_WEAK_CIPHER_ALGORITHMS));
+    iastDeduplicationEnabled =
+        configProvider.getBoolean(IAST_DEDUPLICATION_ENABLED, DEFAULT_IAST_DEDUPLICATION_ENABLED);
 
     ciVisibilityEnabled =
         configProvider.getBoolean(CIVISIBILITY_ENABLED, DEFAULT_CIVISIBILITY_ENABLED);
@@ -1034,9 +1187,26 @@ public class Config {
       ciVisibilityAgentlessUrl = null;
     }
 
+    remoteConfigEnabled =
+        configProvider.getBoolean(REMOTE_CONFIG_ENABLED, DEFAULT_REMOTE_CONFIG_ENABLED);
+    remoteConfigIntegrityCheckEnabled =
+        configProvider.getBoolean(
+            REMOTE_CONFIG_INTEGRITY_CHECK_ENABLED, DEFAULT_REMOTE_CONFIG_INTEGRITY_CHECK_ENABLED);
+    remoteConfigUrl = configProvider.getString(REMOTE_CONFIG_URL);
+    remoteConfigInitialPollInterval =
+        configProvider.getInteger(
+            REMOTE_CONFIG_INITIAL_POLL_INTERVAL, DEFAULT_REMOTE_CONFIG_INITIAL_POLL_INTERVAL);
+    remoteConfigMaxPayloadSize =
+        configProvider.getInteger(
+                REMOTE_CONFIG_MAX_PAYLOAD_SIZE, DEFAULT_REMOTE_CONFIG_MAX_PAYLOAD_SIZE)
+            * 1024;
+    remoteConfigTargetsKeyId =
+        configProvider.getString(
+            REMOTE_CONFIG_TARGETS_KEY_ID, DEFAULT_REMOTE_CONFIG_TARGETS_KEY_ID);
+    remoteConfigTargetsKey =
+        configProvider.getString(REMOTE_CONFIG_TARGETS_KEY, DEFAULT_REMOTE_CONFIG_TARGETS_KEY);
+
     debuggerEnabled = configProvider.getBoolean(DEBUGGER_ENABLED, DEFAULT_DEBUGGER_ENABLED);
-    debuggerSnapshotUrl = configProvider.getString(DEBUGGER_SNAPSHOT_URL);
-    debuggerProbeUrl = configProvider.getString(DEBUGGER_PROBE_URL);
     debuggerUploadTimeout =
         configProvider.getInteger(DEBUGGER_UPLOAD_TIMEOUT, DEFAULT_DEBUGGER_UPLOAD_TIMEOUT);
     debuggerUploadFlushInterval =
@@ -1092,6 +1262,8 @@ public class Config {
         tryMakeImmutableSet(configProvider.getList(RABBIT_PROPAGATION_DISABLED_QUEUES));
     rabbitPropagationDisabledExchanges =
         tryMakeImmutableSet(configProvider.getList(RABBIT_PROPAGATION_DISABLED_EXCHANGES));
+    rabbitIncludeRoutingKeyInResource =
+        configProvider.getBoolean(RABBIT_INCLUDE_ROUTINGKEY_IN_RESOURCE, true);
 
     messageBrokerSplitByDestination =
         configProvider.getBoolean(MESSAGE_BROKER_SPLIT_BY_DESTINATION, false);
@@ -1114,24 +1286,28 @@ public class Config {
 
     igniteCacheIncludeKeys = configProvider.getBoolean(IGNITE_CACHE_INCLUDE_KEYS, false);
 
-    osgiSearchDepth = configProvider.getInteger(OSGI_SEARCH_DEPTH, 1);
+    obfuscationQueryRegexp = configProvider.getString(OBFUSCATION_QUERY_STRING_REGEXP);
 
     playReportHttpStatus = configProvider.getBoolean(PLAY_REPORT_HTTP_STATUS, false);
 
     servletPrincipalEnabled = configProvider.getBoolean(SERVLET_PRINCIPAL_ENABLED, false);
 
-    servletAsyncTimeoutError = configProvider.getBoolean(SERVLET_ASYNC_TIMEOUT_ERROR, true);
+    xDatadogTagsMaxLength =
+        configProvider.getInteger(
+            TRACE_X_DATADOG_TAGS_MAX_LENGTH, DEFAULT_TRACE_X_DATADOG_TAGS_MAX_LENGTH);
 
-    tempJarsCleanOnBoot =
-        configProvider.getBoolean(TEMP_JARS_CLEAN_ON_BOOT, false) && isWindowsOS();
+    servletAsyncTimeoutError = configProvider.getBoolean(SERVLET_ASYNC_TIMEOUT_ERROR, true);
 
     debugEnabled = isDebugMode();
 
     internalExitOnFailure = configProvider.getBoolean(INTERNAL_EXIT_ON_FAILURE, false);
 
-    resolverUseLoadClassEnabled = configProvider.getBoolean(RESOLVER_USE_LOADCLASS, true);
+    resolverOutlinePoolEnabled = configProvider.getBoolean(RESOLVER_OUTLINE_POOL_ENABLED, true);
+    resolverOutlinePoolSize =
+        configProvider.getInteger(RESOLVER_OUTLINE_POOL_SIZE, DEFAULT_RESOLVER_OUTLINE_POOL_SIZE);
     resolverTypePoolSize =
         configProvider.getInteger(RESOLVER_TYPE_POOL_SIZE, DEFAULT_RESOLVER_TYPE_POOL_SIZE);
+    resolverUseLoadClassEnabled = configProvider.getBoolean(RESOLVER_USE_LOADCLASS, true);
 
     cwsEnabled = configProvider.getBoolean(CWS_ENABLED, DEFAULT_CWS_ENABLED);
     cwsTlsRefresh = configProvider.getInteger(CWS_TLS_REFRESH, DEFAULT_CWS_TLS_REFRESH);
@@ -1179,12 +1355,20 @@ public class Config {
     return runtimeId;
   }
 
+  public String getRuntimeVersion() {
+    return runtimeVersion;
+  }
+
   public String getApiKey() {
     return apiKey;
   }
 
   public String getSite() {
     return site;
+  }
+
+  public String getHostName() {
+    return hostName;
   }
 
   public String getServiceName() {
@@ -1257,6 +1441,18 @@ public class Config {
 
   public boolean isTraceResolverEnabled() {
     return traceResolverEnabled;
+  }
+
+  public Set<String> getIastWeakHashAlgorithms() {
+    return iastWeakHashAlgorithms;
+  }
+
+  public Pattern getIastWeakCipherAlgorithms() {
+    return iastWeakCipherAlgorithms;
+  }
+
+  public boolean isIastDeduplicationEnabled() {
+    return iastDeduplicationEnabled;
   }
 
   public Map<String, String> getServiceMapping() {
@@ -1507,12 +1703,26 @@ public class Config {
     return traceAnalyticsEnabled;
   }
 
+  public String getTraceClientIpHeader() {
+    return traceClientIpHeader;
+  }
+
+  // whether to collect headers and run the client ip resolution (also requires appsec to be enabled
+  // or clientIpEnabled)
+  public boolean isTraceClientIpResolverEnabled() {
+    return traceClientIpResolverEnabled;
+  }
+
   public Map<String, String> getTraceSamplingServiceRules() {
     return traceSamplingServiceRules;
   }
 
   public Map<String, String> getTraceSamplingOperationRules() {
     return traceSamplingOperationRules;
+  }
+
+  public String getTraceSamplingRules() {
+    return traceSamplingRules;
   }
 
   public Double getTraceSampleRate() {
@@ -1599,7 +1809,27 @@ public class Config {
     return profilingLegacyTracingIntegrationEnabled;
   }
 
-  public boolean isAppSecEnabled() {
+  public boolean isAsyncProfilerEnabled() {
+    return isAsyncProfilerEnabled;
+  }
+
+  public boolean isCrashTrackingAgentless() {
+    return crashTrackingAgentless;
+  }
+
+  public boolean isTelemetryEnabled() {
+    return telemetryEnabled;
+  }
+
+  public int getTelemetryHeartbeatInterval() {
+    return telemetryHeartbeatInterval;
+  }
+
+  public boolean isClientIpEnabled() {
+    return clientIpEnabled;
+  }
+
+  public ProductActivationConfig getAppSecEnabledConfig() {
     return appSecEnabled;
   }
 
@@ -1609,10 +1839,6 @@ public class Config {
 
   public int getAppSecReportMinTimeout() {
     return appSecReportMinTimeout;
-  }
-
-  public String getAppSecIpAddrHeader() {
-    return appSecIpAddrHeader;
   }
 
   public int getAppSecReportMaxTimeout() {
@@ -1635,6 +1861,30 @@ public class Config {
     return appSecObfuscationParameterValueRegexp;
   }
 
+  public String getAppSecHttpBlockedTemplateHtml() {
+    return appSecHttpBlockedTemplateHtml;
+  }
+
+  public String getAppSecHttpBlockedTemplateJson() {
+    return appSecHttpBlockedTemplateJson;
+  }
+
+  public boolean isIastEnabled() {
+    return iastEnabled;
+  }
+
+  public int getIastMaxConcurrentRequests() {
+    return iastMaxConcurrentRequests;
+  }
+
+  public int getIastVulnerabilitiesPerRequest() {
+    return iastVulnerabilitiesPerRequest;
+  }
+
+  public float getIastRequestSampling() {
+    return iastRequestSampling;
+  }
+
   public boolean isCiVisibilityEnabled() {
     return ciVisibilityEnabled;
   }
@@ -1649,6 +1899,34 @@ public class Config {
 
   public String getAppSecRulesFile() {
     return appSecRulesFile;
+  }
+
+  public long getRemoteConfigMaxPayloadSizeBytes() {
+    return remoteConfigMaxPayloadSize;
+  }
+
+  public boolean isRemoteConfigEnabled() {
+    return remoteConfigEnabled;
+  }
+
+  public boolean isRemoteConfigIntegrityCheckEnabled() {
+    return remoteConfigIntegrityCheckEnabled;
+  }
+
+  public String getFinalRemoteConfigUrl() {
+    return remoteConfigUrl;
+  }
+
+  public int getRemoteConfigInitialPollInterval() {
+    return remoteConfigInitialPollInterval;
+  }
+
+  public String getRemoteConfigTargetsKeyId() {
+    return remoteConfigTargetsKeyId;
+  }
+
+  public String getRemoteConfigTargetsKey() {
+    return remoteConfigTargetsKey;
   }
 
   public boolean isDebuggerEnabled() {
@@ -1700,17 +1978,11 @@ public class Config {
   }
 
   public String getFinalDebuggerProbeUrl() {
-    if (debuggerProbeUrl != null) {
-      return debuggerProbeUrl;
-    }
     // by default poll from datadog agent
     return "http://" + agentHost + ":" + agentPort;
   }
 
   public String getFinalDebuggerSnapshotUrl() {
-    if (debuggerSnapshotUrl != null) {
-      return debuggerSnapshotUrl;
-    }
     // by default send to datadog agent
     return agentUrl + "/debugger/v1/input";
   }
@@ -1759,6 +2031,10 @@ public class Config {
             || rabbitPropagationDisabledExchanges.contains(queueOrExchange));
   }
 
+  public boolean isRabbitIncludeRoutingKeyInResource() {
+    return rabbitIncludeRoutingKeyInResource;
+  }
+
   public boolean isMessageBrokerSplitByDestination() {
     return messageBrokerSplitByDestination;
   }
@@ -1775,8 +2051,8 @@ public class Config {
     return igniteCacheIncludeKeys;
   }
 
-  public int getOsgiSearchDepth() {
-    return osgiSearchDepth;
+  public String getObfuscationQueryRegexp() {
+    return obfuscationQueryRegexp;
   }
 
   public boolean getPlayReportHttpStatus() {
@@ -1787,12 +2063,12 @@ public class Config {
     return servletPrincipalEnabled;
   }
 
-  public boolean isServletAsyncTimeoutError() {
-    return servletAsyncTimeoutError;
+  public int getxDatadogTagsMaxLength() {
+    return xDatadogTagsMaxLength;
   }
 
-  public boolean isTempJarsCleanOnBoot() {
-    return tempJarsCleanOnBoot;
+  public boolean isServletAsyncTimeoutError() {
+    return servletAsyncTimeoutError;
   }
 
   public boolean isTraceAgentV05Enabled() {
@@ -1847,12 +2123,20 @@ public class Config {
     return internalExitOnFailure;
   }
 
-  public boolean isResolverUseLoadClassEnabled() {
-    return resolverUseLoadClassEnabled;
+  public boolean isResolverOutlinePoolEnabled() {
+    return resolverOutlinePoolEnabled;
+  }
+
+  public int getResolverOutlinePoolSize() {
+    return resolverOutlinePoolSize;
   }
 
   public int getResolverTypePoolSize() {
     return resolverTypePoolSize;
+  }
+
+  public boolean isResolverUseLoadClassEnabled() {
+    return resolverUseLoadClassEnabled;
   }
 
   public String getJdbcPreparedStatementClassName() {
@@ -1977,10 +2261,31 @@ public class Config {
             getGlobalTags().size()
                 + profilingTags.size()
                 + runtimeTags.size()
-                + 3 /* for serviceName and host and language */);
+                + 4 /* for serviceName and host and language and runtime_version */);
     result.put(HOST_TAG, host); // Host goes first to allow to override it
     result.putAll(getGlobalTags());
     result.putAll(profilingTags);
+    result.putAll(runtimeTags);
+    // service name set here instead of getRuntimeTags because apm already manages the service tag
+    // and may chose to override it.
+    result.put(SERVICE_TAG, serviceName);
+    result.put(LANGUAGE_TAG_KEY, LANGUAGE_TAG_VALUE);
+    result.put(RUNTIME_VERSION_TAG, runtimeVersion);
+    return Collections.unmodifiableMap(result);
+  }
+
+  public Map<String, String> getMergedCrashTrackingTags() {
+    final Map<String, String> runtimeTags = getRuntimeTags();
+    final String host = getHostName();
+    final Map<String, String> result =
+        newHashMap(
+            getGlobalTags().size()
+                + crashTrackingTags.size()
+                + runtimeTags.size()
+                + 3 /* for serviceName and host and language */);
+    result.put(HOST_TAG, host); // Host goes first to allow to override it
+    result.putAll(getGlobalTags());
+    result.putAll(crashTrackingTags);
     result.putAll(runtimeTags);
     // service name set here instead of getRuntimeTags because apm already manages the service tag
     // and may chose to override it.
@@ -2034,7 +2339,7 @@ public class Config {
     Map<String, String> aasTags = new HashMap<>();
 
     /// The site name of the site instance in Azure where the traced application is running.
-    String siteName = System.getenv("WEBSITE_SITE_NAME");
+    String siteName = getEnv("WEBSITE_SITE_NAME");
     if (siteName != null) {
       aasTags.put("aas.site.name", siteName);
     }
@@ -2045,8 +2350,8 @@ public class Config {
 
     // The type of application instance running in Azure.
     // Possible values: app, function
-    if (System.getenv("FUNCTIONS_WORKER_RUNTIME") != null
-        || System.getenv("FUNCTIONS_EXTENSIONS_VERSION") != null) {
+    if (getEnv("FUNCTIONS_WORKER_RUNTIME") != null
+        || getEnv("FUNCTIONS_EXTENSIONS_VERSION") != null) {
       aasTags.put("aas.site.kind", "functionapp");
       aasTags.put("aas.site.type", "function");
     } else {
@@ -2055,14 +2360,14 @@ public class Config {
     }
 
     //  The resource group of the site instance in Azure App Services
-    String resourceGroup = System.getenv("WEBSITE_RESOURCE_GROUP");
+    String resourceGroup = getEnv("WEBSITE_RESOURCE_GROUP");
     if (resourceGroup != null) {
       aasTags.put("aas.resource.group", resourceGroup);
     }
 
     // Example: 8c500027-5f00-400e-8f00-60000000000f+apm-dotnet-EastUSwebspace
     // Format: {subscriptionId}+{planResourceGroup}-{hostedInRegion}
-    String websiteOwner = System.getenv("WEBSITE_OWNER_NAME");
+    String websiteOwner = getEnv("WEBSITE_OWNER_NAME");
     int plusIndex = websiteOwner == null ? -1 : websiteOwner.indexOf("+");
 
     // The subscription ID of the site instance in Azure App Services
@@ -2092,26 +2397,26 @@ public class Config {
     }
 
     // The instance ID in Azure
-    String instanceId = System.getenv("WEBSITE_INSTANCE_ID");
+    String instanceId = getEnv("WEBSITE_INSTANCE_ID");
     instanceId = instanceId == null ? "unknown" : instanceId;
     aasTags.put("aas.environment.instance_id", instanceId);
 
     // The instance name in Azure
-    String instanceName = System.getenv("COMPUTERNAME");
+    String instanceName = getEnv("COMPUTERNAME");
     instanceName = instanceName == null ? "unknown" : instanceName;
     aasTags.put("aas.environment.instance_name", instanceName);
 
     // The operating system in Azure
-    String operatingSystem = System.getenv("WEBSITE_OS");
+    String operatingSystem = getEnv("WEBSITE_OS");
     operatingSystem = operatingSystem == null ? "unknown" : operatingSystem;
     aasTags.put("aas.environment.os", operatingSystem);
 
     // The version of the extension installed
-    String siteExtensionVersion = System.getenv("DD_AAS_JAVA_EXTENSION_VERSION");
+    String siteExtensionVersion = getEnv("DD_AAS_JAVA_EXTENSION_VERSION");
     siteExtensionVersion = siteExtensionVersion == null ? "unknown" : siteExtensionVersion;
     aasTags.put("aas.environment.extension_version", siteExtensionVersion);
 
-    aasTags.put("aas.environment.runtime", System.getProperty("java.vm.name", "unknown"));
+    aasTags.put("aas.environment.runtime", getProp("java.vm.name", "unknown"));
 
     return aasTags;
   }
@@ -2126,6 +2431,16 @@ public class Config {
     } else {
       // when profilingUrl and agentless are not set we send to the dd trace agent running locally
       return "http://" + agentHost + ":" + agentPort + "/profiling/v1/input";
+    }
+  }
+
+  public String getFinalCrashTrackingTelemetryUrl() {
+    if (crashTrackingAgentless) {
+      // when agentless crashTracking is turned on we send directly to our intake
+      return "https://all-http-intake.logs." + site + "/api/v2/apmtelemetry";
+    } else {
+      // when agentless are not set we send to the dd trace agent running locally
+      return "http://" + agentHost + ":" + agentPort + "/telemetry/proxy/api/v2/apmtelemetry";
     }
   }
 
@@ -2219,13 +2534,13 @@ public class Config {
 
   private static boolean isDebugMode() {
     final String tracerDebugLevelSysprop = "dd.trace.debug";
-    final String tracerDebugLevelProp = System.getProperty(tracerDebugLevelSysprop);
+    final String tracerDebugLevelProp = getProp(tracerDebugLevelSysprop);
 
     if (tracerDebugLevelProp != null) {
       return Boolean.parseBoolean(tracerDebugLevelProp);
     }
 
-    final String tracerDebugLevelEnv = System.getenv(toEnvVar(tracerDebugLevelSysprop));
+    final String tracerDebugLevelEnv = getEnv(toEnvVar(tracerDebugLevelSysprop));
 
     if (tracerDebugLevelEnv != null) {
       return Boolean.parseBoolean(tracerDebugLevelEnv);
@@ -2361,14 +2676,14 @@ public class Config {
   }
 
   /** Returns the detected hostname. First tries locally, then using DNS */
-  public static String getHostName() {
+  private static String initHostName() {
     String possibleHostname;
 
     // Try environment variable.  This works in almost all environments
     if (isWindowsOS()) {
-      possibleHostname = System.getenv("COMPUTERNAME");
+      possibleHostname = getEnv("COMPUTERNAME");
     } else {
-      possibleHostname = System.getenv("HOSTNAME");
+      possibleHostname = getEnv("HOSTNAME");
     }
 
     if (possibleHostname != null && !possibleHostname.isEmpty()) {
@@ -2381,7 +2696,7 @@ public class Config {
         new BufferedReader(
             new InputStreamReader(Runtime.getRuntime().exec("hostname").getInputStream()))) {
       possibleHostname = reader.readLine();
-    } catch (final Exception ignore) {
+    } catch (final Throwable ignore) {
       // Ignore.  Hostname command is not always available
     }
 
@@ -2401,7 +2716,38 @@ public class Config {
   }
 
   private static boolean isWindowsOS() {
-    return System.getProperty("os.name").startsWith("Windows");
+    return getProp("os.name").startsWith("Windows");
+  }
+
+  private static String getEnv(String name) {
+    String value = System.getenv(name);
+    if (value != null) {
+      ConfigCollector.get().put(name, value);
+    }
+    return value;
+  }
+
+  private static Pattern getPattern(String defaultValue, String userValue) {
+    try {
+      if (userValue != null) {
+        return Pattern.compile(userValue);
+      }
+    } catch (Exception e) {
+      log.debug("Cannot create pattern from user value {}", userValue);
+    }
+    return Pattern.compile(defaultValue);
+  }
+
+  private static String getProp(String name) {
+    return getProp(name, null);
+  }
+
+  private static String getProp(String name, String def) {
+    String value = System.getProperty(name, def);
+    if (value != null) {
+      ConfigCollector.get().put(name, value);
+    }
+    return value;
   }
 
   // This has to be placed after all other static fields to give them a chance to initialize
@@ -2440,10 +2786,15 @@ public class Config {
         + "runtimeId='"
         + runtimeId
         + '\''
+        + ", runtimeVersion='"
+        + runtimeVersion
         + ", apiKey="
         + (apiKey == null ? "null" : "****")
         + ", site='"
         + site
+        + '\''
+        + ", hostName='"
+        + hostName
         + '\''
         + ", serviceName='"
         + serviceName
@@ -2573,6 +2924,10 @@ public class Config {
         + '\''
         + ", jmxFetchStatsdPort="
         + jmxFetchStatsdPort
+        + ", jmxFetchMultipleRuntimeServicesEnabled="
+        + jmxFetchMultipleRuntimeServicesEnabled
+        + ", jmxFetchMultipleRuntimeServicesLimit="
+        + jmxFetchMultipleRuntimeServicesLimit
         + ", healthMetricsEnabled="
         + healthMetricsEnabled
         + ", healthMetricsStatsdHost='"
@@ -2612,6 +2967,8 @@ public class Config {
         + traceSamplingServiceRules
         + ", traceSamplingOperationRules="
         + traceSamplingOperationRules
+        + ", traceSamplingJsonRules="
+        + traceSamplingRules
         + ", traceSampleRate="
         + traceSampleRate
         + ", traceRateLimit="
@@ -2657,12 +3014,22 @@ public class Config {
         + profilingExceptionHistogramMaxCollectionSize
         + ", profilingExcludeAgentThreads="
         + profilingExcludeAgentThreads
+        + ", crashTrackingTags="
+        + crashTrackingTags
+        + ", crashTrackingAgentless="
+        + crashTrackingAgentless
+        + ", remoteConfigEnabled="
+        + remoteConfigEnabled
+        + ", remoteConfigUrl="
+        + remoteConfigUrl
+        + ", remoteConfigInitialPollInterval="
+        + remoteConfigInitialPollInterval
+        + ", remoteConfigMaxPayloadSize="
+        + remoteConfigMaxPayloadSize
+        + ", remoteConfigIntegrityCheckEnabled="
+        + remoteConfigIntegrityCheckEnabled
         + ", debuggerEnabled="
         + debuggerEnabled
-        + ", debuggerSnapshotUrl="
-        + debuggerSnapshotUrl
-        + ", debuggerProbeUrl="
-        + debuggerProbeUrl
         + ", debuggerUploadTimeout="
         + debuggerUploadTimeout
         + ", debuggerUploadFlushInterval="
@@ -2717,14 +3084,12 @@ public class Config {
         + hystrixMeasuredEnabled
         + ", igniteCacheIncludeKeys="
         + igniteCacheIncludeKeys
-        + ", osgiSearchDepth="
-        + osgiSearchDepth
         + ", servletPrincipalEnabled="
         + servletPrincipalEnabled
         + ", servletAsyncTimeoutError="
         + servletAsyncTimeoutError
-        + ", tempJarsCleanOnBoot="
-        + tempJarsCleanOnBoot
+        + ", datadogTagsLimit="
+        + xDatadogTagsMaxLength
         + ", traceAgentV05Enabled="
         + traceAgentV05Enabled
         + ", debugEnabled="
@@ -2736,10 +3101,14 @@ public class Config {
         + idGenerationStrategy
         + ", internalExitOnFailure="
         + internalExitOnFailure
-        + ", resolverUseLoadClassEnabled="
-        + resolverUseLoadClassEnabled
+        + ", resolverOutlinePoolEnabled="
+        + resolverOutlinePoolEnabled
+        + ", resolverOutlinePoolSize="
+        + resolverOutlinePoolSize
         + ", resolverTypePoolSize="
         + resolverTypePoolSize
+        + ", resolverUseLoadClassEnabled="
+        + resolverUseLoadClassEnabled
         + ", jdbcPreparedStatementClassName='"
         + jdbcPreparedStatementClassName
         + '\''
@@ -2756,6 +3125,8 @@ public class Config {
         + grpcClientErrorStatuses
         + ", configProvider="
         + configProvider
+        + ", clientIpEnabled="
+        + clientIpEnabled
         + ", appSecEnabled="
         + appSecEnabled
         + ", appSecReportingInband="
@@ -2763,6 +3134,10 @@ public class Config {
         + ", appSecRulesFile='"
         + appSecRulesFile
         + "'"
+        + ", appSecHttpBlockedTemplateHtml="
+        + appSecHttpBlockedTemplateHtml
+        + ", appSecHttpBlockedTemplateJson="
+        + appSecHttpBlockedTemplateJson
         + ", cwsEnabled="
         + cwsEnabled
         + ", cwsTlsRefresh="

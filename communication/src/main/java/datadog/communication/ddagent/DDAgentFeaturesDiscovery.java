@@ -125,11 +125,12 @@ public class DDAgentFeaturesDiscovery implements DroppingPolicy {
 
     if (log.isDebugEnabled()) {
       log.debug(
-          "discovered traceEndpoint={}, metricsEndpoint={}, supportsDropping={}, dataStreamsEndpoint={}",
+          "discovered traceEndpoint={}, metricsEndpoint={}, supportsDropping={}, dataStreamsEndpoint={}, configEndpoint={}",
           traceEndpoint,
           metricsEndpoint,
           supportsDropping,
-          dataStreamsEndpoint);
+          dataStreamsEndpoint,
+          configEndpoint);
     }
   }
 
@@ -227,7 +228,12 @@ public class DDAgentFeaturesDiscovery implements DroppingPolicy {
   private static void discoverStatsDPort(final Map<String, Object> info) {
     try {
       Map<String, ?> config = (Map<String, ?>) info.get("config");
-      int statsdPort = ((Number) config.get("statsd_port")).intValue();
+      final Object statsdPortObj = config.get("statsd_port");
+      if (statsdPortObj == null) {
+        log.debug("statsd_port missing from trace agent /info response");
+        return;
+      }
+      int statsdPort = ((Number) statsdPortObj).intValue();
       DDAgentStatsDClientManager.setDefaultStatsDPort(statsdPort);
     } catch (Throwable ignore) {
       log.debug("statsd_port missing from trace agent /info response", ignore);
@@ -256,6 +262,10 @@ public class DDAgentFeaturesDiscovery implements DroppingPolicy {
 
   public String getDataStreamsEndpoint() {
     return dataStreamsEndpoint;
+  }
+
+  public HttpUrl buildUrl(String endpoint) {
+    return agentBaseUrl.resolve(endpoint);
   }
 
   public boolean supportsDataStreams() {

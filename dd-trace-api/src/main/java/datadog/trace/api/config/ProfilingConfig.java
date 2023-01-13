@@ -22,15 +22,10 @@ public final class ProfilingConfig {
   public static final String PROFILING_API_KEY_VERY_OLD = "profiling.apikey";
   @Deprecated // Use dd.api-key-file instead
   public static final String PROFILING_API_KEY_FILE_VERY_OLD = "profiling.apikey.file";
-  public static final String PROFILING_TEMPLATE = "profiling.template";
-  public static final String PROFILING_TEMPLATE_DEFAULT = "default";
   public static final String PROFILING_TAGS = "profiling.tags";
   public static final String PROFILING_START_DELAY = "profiling.start-delay";
   public static final int PROFILING_START_DELAY_DEFAULT = 10;
-  // DANGEROUS! May lead on sigsegv on JVMs before 14
-  // Not intended for production use
-  public static final String PROFILING_START_FORCE_FIRST =
-      "profiling.experimental.start-force-first";
+  public static final String PROFILING_START_FORCE_FIRST = "profiling.start-force-first";
   public static final boolean PROFILING_START_FORCE_FIRST_DEFAULT = false;
   public static final String PROFILING_UPLOAD_PERIOD = "profiling.upload.period";
   public static final int PROFILING_UPLOAD_PERIOD_DEFAULT = 60;
@@ -68,20 +63,37 @@ public final class ProfilingConfig {
   public static final int PROFILING_ASYNC_ALLOC_INTERVAL_DEFAULT = 256 * 1024;
   public static final String PROFILING_ASYNC_CPU_ENABLED = "profiling.async.cpu.enabled";
   public static final boolean PROFILING_ASYNC_CPU_ENABLED_DEFAULT = true;
-  public static final String PROFILING_ASYNC_CPU_MODE = "profiling.async.cpu.mode";
-  public static final String PROFILING_ASYNC_CPU_MODE_DEFAULT = "cpu";
   public static final String PROFILING_ASYNC_CPU_INTERVAL = "profiling.async.cpu.interval.ms";
   public static final int PROFILING_ASYNC_CPU_INTERVAL_DEFAULT = 10;
-  public static final String PROFILING_ASYNC_CPU_STACKDEPTH = "profiling.async.cpu.stackdepth";
-  public static final int PROFILING_ASYNC_CPU_STACKDEPTH_DEFAULT = 512;
-  public static final String PROFILING_ASYNC_CPU_SAFEMODE = "profiling.async.cpu.safemode";
-  public static final int PROFILING_ASYNC_CPU_SAFEMODE_DEFAULT = 12; // POP_FRAME|SCAN_STACK
+  public static final String PROFILING_ASYNC_WALL_ENABLED = "profiling.async.wall.enabled";
+  public static final boolean PROFILING_ASYNC_WALL_ENABLED_DEFAULT = true;
+  public static final String PROFILING_ASYNC_WALL_INTERVAL = "profiling.async.wall.interval.ms";
+  public static final int PROFILING_ASYNC_WALL_INTERVAL_DEFAULT = 10;
+
+  public static final String PROFILING_ASYNC_WALL_THREAD_FILTER_ENABLED =
+      "profiling.async.wall.thread.filter.enabled";
+
+  public static final boolean PROFILING_ASYNC_WALL_THREAD_FILTER_ENABLED_DEFAULT = true;
+
+  public static final String PROFILING_ASYNC_LOG_LEVEL = "profiling.async.loglevel";
+
+  public static final String PROFILING_ASYNC_LOG_LEVEL_DEFAULT = "NONE";
+
+  public static final String PROFILING_ASYNC_WALL_COLLAPSE_SAMPLES =
+      "profiling.async.wall.collapse.samples";
+  public static final boolean PROFILING_ASYNC_WALL_COLLAPSE_SAMPLES_DEFAULT = false;
+
+  public static final String PROFILING_ASYNC_STACKDEPTH = "profiling.async.stackdepth";
+  public static final int PROFILING_ASYNC_STACKDEPTH_DEFAULT = 512;
+  public static final String PROFILING_ASYNC_CSTACK = "profiling.async.cstack";
+  public static final String PROFILING_ASYNC_CSTACK_DEFAULT = "default";
+  public static final String PROFILING_ASYNC_SAFEMODE = "profiling.async.safemode";
+  public static final int PROFILING_ASYNC_SAFEMODE_DEFAULT = 12; // POP_FRAME|SCAN_STACK
   public static final String PROFILING_ASYNC_MEMLEAK_ENABLED = "profiling.async.memleak.enabled";
   public static final boolean PROFILING_ASYNC_MEMLEAK_ENABLED_DEFAULT = false;
   public static final String PROFILING_ASYNC_MEMLEAK_INTERVAL = "profiling.async.memleak.interval";
   public static final String PROFILING_ASYNC_MEMLEAK_CAPACITY = "profiling.async.memleak.capacity";
   public static final int PROFILING_ASYNC_MEMLEAK_CAPACITY_DEFAULT = 1024;
-
   public static final String PROFILING_TRACING_CONTEXT_ENABLED =
       "profiling.tracing_context.enabled";
   public static final boolean PROFILING_TRACING_CONTEXT_ENABLED_DEFAULT = false;
@@ -102,6 +114,16 @@ public final class ProfilingConfig {
   public static final int PROFILING_TRACING_CONTEXT_MAX_SIZE_DEFAULT =
       20_000; // 20k bytes is the default
 
+  public static final String PROFILING_TRACING_CONTEXT_SPAN_INACTIVITY_CHECK =
+      "profiling.tracing_context.span_inactivity_check.ms";
+
+  public static final int PROFILING_TRACING_CONTEXT_SPAN_INACTIVITY_CHECK_DEFAULT =
+      5_000; // 5 secs default
+
+  public static final String PROFILING_TRACING_CONTEXT_MAX_SPANS =
+      "profiling.tracing_context.inflight_spans.max";
+  public static final int PROFILING_TRACING_CONTEXT_MAX_SPANS_DEFAULT = 1_000_000;
+
   public static final String PROFILING_LEGACY_TRACING_INTEGRATION =
       "profiling.legacy.tracing.integration";
   public static final boolean PROFILING_LEGACY_TRACING_INTEGRATION_DEFAULT = true;
@@ -113,8 +135,7 @@ public final class ProfilingConfig {
   public static final String PROFILING_CHECKPOINTS_SAMPLER_WINDOW_MS =
       "profiling.checkpoints.sampler.sliding-window.ms";
   public static final int PROFILING_CHECKPOINTS_SAMPLER_WINDOW_MS_DEFAULT = 5000;
-  public static final String PROFILING_CHECKPOINTS_SAMPLER_LIMIT =
-      "profiling.checkpoints.sampler.limit";
+  public static final String PROFILING_CHECKPOINTS_SAMPLER_LIMIT = "profiling.checkpoints.limit";
   public static final int PROFILING_CHECKPOINTS_SAMPLER_LIMIT_DEFAULT = 500_000;
   public static final String PROFILING_ENDPOINT_COLLECTION_ENABLED =
       "profiling.endpoint.collection.enabled";
@@ -130,6 +151,11 @@ public final class ProfilingConfig {
   // Not intended for production use
   public static final String PROFILING_AGENTLESS = "profiling.agentless";
   public static final boolean PROFILING_AGENTLESS_DEFAULT = false;
+
+  public static final String PROFILING_DISABLED_EVENTS = "profiling.disabled.events";
+  public static final String PROFILING_ENABLED_EVENTS = "profiling.disabled.events";
+
+  public static final String PROFILING_DEBUG_DUMP_PATH = "profiling.debug.dump_path";
 
   private ProfilingConfig() {}
 }
